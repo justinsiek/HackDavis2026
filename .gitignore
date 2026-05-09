@@ -1,0 +1,21 @@
+# env (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# os
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp

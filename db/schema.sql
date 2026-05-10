@@ -85,3 +85,19 @@ create table if not exists doctor_patient_snapshots (
   last_visit_id  uuid references visits(id),
   primary key (doctor_id, patient_id)
 );
+
+-- ---------------------------------------------------------------------------
+-- 6. patient_documents (uploaded prior medical records)
+-- ---------------------------------------------------------------------------
+create table if not exists patient_documents (
+  id           uuid primary key default gen_random_uuid(),
+  patient_id   uuid not null references patients(id) on delete cascade,
+  filename     text not null,
+  mime_type    text,
+  file_data    text not null,
+  uploaded_at  timestamptz not null default now(),
+  uploaded_by  uuid references doctors(id)
+);
+
+create index if not exists patient_documents_patient_idx
+  on patient_documents (patient_id, uploaded_at desc);

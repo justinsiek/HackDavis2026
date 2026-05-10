@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -17,6 +18,7 @@ import {
   GetPatientResponse,
   Medication,
   Patient,
+  PatientDocument,
   Vitals,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -35,6 +37,7 @@ export default function PatientDetailPage({ params }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null);
   const [isStartingVisit, setIsStartingVisit] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -99,43 +102,126 @@ export default function PatientDetailPage({ params }: Props) {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3">
-          <Link
-            href="/patients"
-            className="text-sm text-zinc-600 hover:text-zinc-900"
-          >
-            ← All patients
-          </Link>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-zinc-600">
-              Logged in as{" "}
-              <span className="font-medium text-zinc-900">{doctor.name}</span>
-            </span>
-            <button
-              onClick={startRecording}
-              disabled={isStartingVisit || !data?.patient}
-              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60"
+    <>
+      <div
+        className={`flex flex-1 flex-col transition-[margin-right] duration-200 ${
+          isChatOpen ? "mr-[420px]" : ""
+        }`}
+      >
+        <header className="border-b border-zinc-200 bg-white">
+          <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3">
+            <Link
+              href="/patients"
+              className="text-sm text-zinc-600 hover:text-zinc-900"
             >
-              {isStartingVisit ? "Starting…" : "Record interaction"}
-            </button>
+              ← All patients
+            </Link>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-zinc-600">
+                Logged in as{" "}
+                <span className="font-medium text-zinc-900">{doctor.name}</span>
+              </span>
+              <button
+                onClick={() => setIsChatOpen((o) => !o)}
+                disabled={!data?.patient}
+                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
+              >
+                {isChatOpen ? "Close chat" : "Ask AI"}
+              </button>
+              <button
+                onClick={startRecording}
+                disabled={isStartingVisit || !data?.patient}
+                className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60"
+              >
+                {isStartingVisit ? "Starting…" : "Record interaction"}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-4">
+          {isLoading ? (
+            <div className="text-center text-sm text-zinc-500">Loading…</div>
+          ) : error ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : data?.patient ? (
+            <Bento data={data} onChange={loadPatient} stacked={isChatOpen} />
+          ) : null}
+        </main>
+      </div>
+
+      <ChatSidebar
+        open={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        patientName={data?.patient?.name ?? ""}
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chat sidebar
+// ---------------------------------------------------------------------------
+
+function ChatSidebar({
+  open,
+  onClose,
+  patientName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  patientName: string;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  return (
+    <aside
+      aria-hidden={!open}
+      className={`fixed right-0 top-0 z-40 flex h-full w-full max-w-[420px] flex-col border-l border-zinc-200 bg-white shadow-xl transition-transform duration-200 ${
+        open ? "translate-x-0" : "translate-x-full"
+      }`}
+    >
+      <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-zinc-500">
+            Ask AI
+          </div>
+          <div className="font-medium text-zinc-900">
+            {patientName || "Patient"}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close chat"
+          className="text-zinc-400 transition hover:text-zinc-900"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 18 18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M3 3l12 12M15 3L3 15" />
+          </svg>
+        </button>
       </header>
-
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-4">
-        {isLoading ? (
-          <div className="text-center text-sm text-zinc-500">Loading…</div>
-        ) : error ? (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        ) : data?.patient ? (
-          <Bento data={data} />
-        ) : null}
-      </main>
-    </div>
+      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400">
+        Chat coming soon.
+      </div>
+    </aside>
   );
 }
 
@@ -143,14 +229,24 @@ export default function PatientDetailPage({ params }: Props) {
 // Bento layout
 // ---------------------------------------------------------------------------
 
-function Bento({ data }: { data: GetPatientResponse }) {
+function Bento({
+  data,
+  onChange,
+  stacked = false,
+}: {
+  data: GetPatientResponse;
+  onChange: () => void;
+  stacked?: boolean;
+}) {
   const { patient } = data;
   const state = data.current_state;
   const vitalsSeries = useMemo(() => mockVitalsSeries(patient.id), [patient.id]);
   const labs = useMemo(() => mockLabs(patient.id), [patient.id]);
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+    <div
+      className={`grid gap-3 ${stacked ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-12"}`}
+    >
       {/* Row 1: header + medications + long-term goals */}
       <div className="lg:col-span-6">
         <PatientHeaderCard patient={patient} synopsis={state?.synopsis ?? ""} />
@@ -166,34 +262,18 @@ function Bento({ data }: { data: GetPatientResponse }) {
         />
       </div>
 
-      {/* Row 2: full-width what's-changed */}
-      <div className="lg:col-span-12">
-        <ChangedCard
-          narrative={data.narrative}
-          isFirstView={data.is_first_view}
-        />
-      </div>
+      {/* Row 2: what's-changed (only after the first visit) */}
+      {!data.is_first_view && (
+        <div className="lg:col-span-12">
+          <ChangedCard narrative={data.narrative} />
+        </div>
+      )}
 
-      {/* Row 3: problems / plan */}
+      {/* Row 3: problems / subjective */}
       <div className="lg:col-span-6">
         <ProblemsCard diagnoses={state?.active_diagnoses ?? []} />
       </div>
       <div className="lg:col-span-6">
-        <TextCard
-          title="Plan & next steps"
-          content={state?.treatment_plan ?? ""}
-          emptyText="No plan recorded yet."
-        />
-      </div>
-
-      {/* Row 4: vitals + labs + subjective */}
-      <div className="lg:col-span-4">
-        <VitalsCard vitals={state?.recent_vitals ?? null} series={vitalsSeries} />
-      </div>
-      <div className="lg:col-span-4">
-        <LabsCard labs={labs} />
-      </div>
-      <div className="lg:col-span-4">
         <TextCard
           title="Subjective"
           content={state?.current_presentation ?? ""}
@@ -201,7 +281,22 @@ function Bento({ data }: { data: GetPatientResponse }) {
         />
       </div>
 
-      {/* Row 5: physical exam + PMH */}
+      {/* Row 4: vitals + labs + past medical documents */}
+      <div className="lg:col-span-4">
+        <VitalsCard vitals={state?.recent_vitals ?? null} series={vitalsSeries} />
+      </div>
+      <div className="lg:col-span-4">
+        <LabsCard labs={labs} />
+      </div>
+      <div className="lg:col-span-4">
+        <DocumentsCard
+          patientId={patient.id}
+          documents={data.documents}
+          onChange={onChange}
+        />
+      </div>
+
+      {/* Row 5: physical exam + plan & next steps */}
       <div className="lg:col-span-6">
         <TextCard
           title="Physical exam"
@@ -211,9 +306,9 @@ function Bento({ data }: { data: GetPatientResponse }) {
       </div>
       <div className="lg:col-span-6">
         <TextCard
-          title="Past medical history"
-          content={state?.past_medical_history ?? ""}
-          emptyText="No prior history documented."
+          title="Plan & next steps"
+          content={state?.treatment_plan ?? ""}
+          emptyText="No plan recorded yet."
         />
       </div>
     </div>
@@ -314,39 +409,21 @@ function PatientHeaderCard({
   );
 }
 
-function ChangedCard({
-  narrative,
-  isFirstView,
-}: {
-  narrative: string | null;
-  isFirstView: boolean;
-}) {
-  let body: ReactNode;
-  if (isFirstView) {
-    body = (
-      <p className="text-sm italic text-amber-900/80">
-        First time seeing this patient — start with the synopsis.
-      </p>
-    );
-  } else if (!narrative) {
-    body = (
-      <p className="text-sm italic text-amber-900/80">
-        Nothing new since your last visit.
-      </p>
-    );
-  } else {
-    body = (
-      <p className="whitespace-pre-wrap text-sm leading-6 text-amber-950">
-        {narrative}
-      </p>
-    );
-  }
+function ChangedCard({ narrative }: { narrative: string | null }) {
   return (
     <section className="flex h-full flex-col rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm ring-1 ring-amber-100">
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">
         What&rsquo;s changed since you last saw this patient
       </h2>
-      {body}
+      {narrative ? (
+        <p className="whitespace-pre-wrap text-sm leading-6 text-amber-950">
+          {narrative}
+        </p>
+      ) : (
+        <p className="text-sm italic text-amber-900/80">
+          Nothing new since your last visit.
+        </p>
+      )}
     </section>
   );
 }
@@ -548,8 +625,182 @@ function LabsCard({ labs }: { labs: Lab[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+
+function DocumentsCard({
+  patientId,
+  documents,
+  onChange,
+}: {
+  patientId: string;
+  documents: PatientDocument[];
+  onChange: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const file_data = await fileToBase64(file);
+      await api(`/api/patients/${patientId}/documents`, {
+        method: "POST",
+        body: JSON.stringify({
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          file_data,
+        }),
+      });
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleView(doc: PatientDocument) {
+    try {
+      const result = await api<{
+        document: { file_data: string; mime_type: string | null; filename: string };
+      }>(`/api/patients/${patientId}/documents/${doc.id}`);
+      const blob = base64ToBlob(
+        result.document.file_data,
+        result.document.mime_type || "application/octet-stream"
+      );
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open document");
+    }
+  }
+
+  async function handleDelete(doc: PatientDocument) {
+    if (!window.confirm(`Delete ${doc.filename}?`)) return;
+    try {
+      await api(`/api/patients/${patientId}/documents/${doc.id}`, {
+        method: "DELETE",
+      });
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  return (
+    <BentoCard>
+      <CardHeader
+        title="Past medical documents"
+        action={
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy}
+            className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+          >
+            {busy ? "Uploading…" : "+ Upload"}
+          </button>
+        }
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
+      {documents.length === 0 ? (
+        <Empty>No documents uploaded yet.</Empty>
+      ) : (
+        <ul className="divide-y divide-zinc-100 text-sm">
+          {documents.map((doc) => (
+            <li
+              key={doc.id}
+              className="group flex items-center gap-3 py-2 first:pt-0 last:pb-0"
+            >
+              <DocIcon />
+              <button
+                type="button"
+                onClick={() => handleView(doc)}
+                className="min-w-0 flex-1 truncate text-left font-medium text-zinc-900 hover:text-zinc-600 hover:underline"
+              >
+                {doc.filename}
+              </button>
+              <span className="shrink-0 text-xs text-zinc-500">
+                {new Date(doc.uploaded_at).toLocaleDateString()}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleDelete(doc)}
+                aria-label={`Delete ${doc.filename}`}
+                className="shrink-0 text-zinc-300 opacity-0 transition group-hover:opacity-100 hover:text-red-600"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M2 2l10 10M12 2L2 12" />
+                </svg>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </BentoCard>
+  );
+}
+
+function DocIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className="shrink-0 text-zinc-400"
+    >
+      <path d="M3 1.5h6.5L13 5v9.5H3z" />
+      <path d="M9.5 1.5V5H13" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
 
 function formatHeight(cm: number): string {
   const totalInches = cm / 2.54;

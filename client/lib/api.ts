@@ -47,7 +47,6 @@ export type PatientState = {
   treatment_plan: string | null;
   recent_vitals: Vitals | null;
   physical_exam: string | null;
-  past_medical_history: string | null;
   long_term_goals: string | null;
   updated_at: string;
 };
@@ -58,12 +57,21 @@ export type ViewerSnapshot = {
   snapshot_at: string;
 };
 
+export type PatientDocument = {
+  id: string;
+  filename: string;
+  mime_type: string | null;
+  uploaded_at: string;
+  uploaded_by: string | null;
+};
+
 export type GetPatientResponse = {
   patient: Patient;
   current_state: PatientState | null;
   viewer_snapshot: ViewerSnapshot | null;
   narrative: string | null;
   is_first_view: boolean;
+  documents: PatientDocument[];
 };
 
 export function getStoredDoctor(): Doctor | null {

@@ -41,7 +41,6 @@ STATE_FIELDS = [
     "treatment_plan",
     "recent_vitals",
     "physical_exam",
-    "past_medical_history",
     "long_term_goals",
 ]
 
@@ -57,7 +56,6 @@ def state_subset(state):
             "treatment_plan": "",
             "recent_vitals": None,
             "physical_exam": "",
-            "past_medical_history": "",
             "long_term_goals": "",
         }
     return {
@@ -68,7 +66,6 @@ def state_subset(state):
         "treatment_plan": state.get("treatment_plan") or "",
         "recent_vitals": state.get("recent_vitals"),
         "physical_exam": state.get("physical_exam") or "",
-        "past_medical_history": state.get("past_medical_history") or "",
         "long_term_goals": state.get("long_term_goals") or "",
     }
 
@@ -150,13 +147,6 @@ UPDATE_PATIENT_STATE_TOOL = {
                     "Clinical shorthand OK. ≤30 words. Empty if no exam."
                 ),
             },
-            "past_medical_history": {
-                "type": "string",
-                "description": (
-                    "Comma-separated list of conditions/surgeries/family hx. "
-                    "No prose, no preamble. ≤40 words. Empty if none."
-                ),
-            },
             "long_term_goals": {
                 "type": "string",
                 "description": (
@@ -173,7 +163,6 @@ UPDATE_PATIENT_STATE_TOOL = {
             "treatment_plan",
             "recent_vitals",
             "physical_exam",
-            "past_medical_history",
             "long_term_goals",
         ],
     },
@@ -387,13 +376,91 @@ def get_patient(patient_id):
                 viewer_snapshot.get("snapshot") or {}, current_state
             )
 
+    docs_result = db_call(
+        supabase.table("patient_documents")
+        .select("id, filename, mime_type, uploaded_at, uploaded_by")
+        .eq("patient_id", patient_id)
+        .order("uploaded_at", desc=True)
+        .execute
+    )
+
     return jsonify({
         "patient": patient,
         "current_state": current_state,
         "viewer_snapshot": viewer_snapshot,
         "narrative": narrative,
         "is_first_view": is_first_view,
+        "documents": docs_result.data or [],
     })
+
+
+@app.route("/api/patients/<patient_id>/documents", methods=["POST"])
+def upload_document(patient_id):
+    doctor, err = require_doctor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    filename = (body.get("filename") or "").strip()
+    file_data = body.get("file_data")
+    mime_type = body.get("mime_type")
+    if not filename or not file_data:
+        return jsonify({"error": "filename and file_data required"}), 400
+    inserted = db_call(
+        supabase.table("patient_documents")
+        .insert({
+            "patient_id": patient_id,
+            "filename": filename,
+            "mime_type": mime_type,
+            "file_data": file_data,
+            "uploaded_by": doctor["id"],
+        })
+        .execute
+    )
+    if not inserted.data:
+        return jsonify({"error": "insert failed"}), 500
+    row = inserted.data[0]
+    return jsonify({
+        "document": {
+            "id": row["id"],
+            "filename": row["filename"],
+            "mime_type": row.get("mime_type"),
+            "uploaded_at": row["uploaded_at"],
+            "uploaded_by": row.get("uploaded_by"),
+        }
+    }), 201
+
+
+@app.route("/api/patients/<patient_id>/documents/<doc_id>", methods=["GET"])
+def get_document(patient_id, doc_id):
+    _, err = require_doctor()
+    if err:
+        return err
+    result = db_call(
+        supabase.table("patient_documents")
+        .select("*")
+        .eq("id", doc_id)
+        .eq("patient_id", patient_id)
+        .limit(1)
+        .execute
+    )
+    if not result.data:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"document": result.data[0]})
+
+
+@app.route("/api/patients/<patient_id>/documents/<doc_id>", methods=["DELETE"])
+def delete_document(patient_id, doc_id):
+    _, err = require_doctor()
+    if err:
+        return err
+    db_call(
+        supabase.table("patient_documents")
+        .delete()
+        .eq("id", doc_id)
+        .eq("patient_id", patient_id)
+        .execute
+    )
+    return jsonify({"ok": True})
 
 
 @app.route("/api/visits/start", methods=["POST"])

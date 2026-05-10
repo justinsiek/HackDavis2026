@@ -33,7 +33,7 @@ import { Lab, mockLabs, mockVitalsSeries, VitalSeries } from "@/lib/mockClinical
 import RecordingView from "./RecordingView";
 import Sparkline from "./Sparkline";
 import { FieldHistoryPopup } from "./FieldHistoryPopup";
-import Sidebar from "@/components/Sidebar";
+import TopBar from "@/components/TopBar";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -287,10 +287,10 @@ export default function PatientDetailPage({ params }: Props) {
 
   return (
     <>
-      <div className="flex min-h-screen">
-        <Sidebar doctorName={doctor.name} onLogout={handleLogout} />
+      <div className="min-h-screen flex flex-col">
+        <TopBar doctorName={doctor.name} onLogout={handleLogout} />
         <div
-          className={`flex flex-1 flex-col min-w-0 transition-[margin-right] duration-200 ${
+          className={`flex flex-col flex-1 transition-[margin-right] duration-200 ${
             isChatOpen ? "mr-[420px]" : ""
           }`}
         >
@@ -368,7 +368,11 @@ export default function PatientDetailPage({ params }: Props) {
               </div>
             </div>
             {publishError && (
-              <div className="px-6 pb-3 text-sm" style={{ color: "#dc2626" }}>
+              <div
+                className="mx-6 mb-3 inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm"
+                style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#EF4444" }} />
                 {publishError}
               </div>
             )}
@@ -378,8 +382,12 @@ export default function PatientDetailPage({ params }: Props) {
             {isLoading ? (
               <div className="text-center text-sm" style={{ color: "var(--text-3)" }}>Loading…</div>
             ) : error ? (
-              <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }}>
-                {error}
+              <div
+                className="flex items-start gap-2 rounded-lg px-4 py-3 text-sm"
+                style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+              >
+                <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
+                <span>{error}</span>
               </div>
             ) : data?.patient ? (
               <Bento
@@ -747,7 +755,11 @@ function ChatSidebar({
       </div>
 
       {error && (
-        <p className="px-4 py-2 text-xs border-t" style={{ background: "#fef2f2", borderColor: "#fecaca", color: "#dc2626" }}>
+        <p
+          className="px-4 py-2 text-xs border-t flex items-center gap-1.5"
+          style={{ background: "#FEF2F2", borderColor: "#FECACA", color: "#0F172A" }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
           {error}
         </p>
       )}
@@ -820,7 +832,7 @@ function ChatSidebar({
                 disabled={isClearing}
                 autoFocus
                 className="rounded-lg px-3 py-1.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-                style={{ background: "#dc2626" }}
+                style={{ background: "#DC2626" }}
               >
                 {isClearing ? "Clearing…" : "Clear chat"}
               </button>
@@ -1184,17 +1196,17 @@ function ChangedCard({ narrative }: { narrative: string | null }) {
   return (
     <section
       className="flex h-full flex-col rounded-xl p-5"
-      style={{ background: "#fffbeb", border: "1px solid #fde68a" }}
+      style={{ background: "#FFFBEB", border: "1px solid #FDE68A" }}
     >
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: "#92400e" }}>
+      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: "#0F172A" }}>
         What&rsquo;s changed since you last saw this patient
       </h2>
       {narrative ? (
-        <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: "#78350f" }}>
+        <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: "#475569" }}>
           {narrative}
         </p>
       ) : (
-        <p className="text-sm italic" style={{ color: "#a16207" }}>
+        <p className="text-sm italic" style={{ color: "#475569" }}>
           Nothing new since your last visit.
         </p>
       )}
@@ -1388,7 +1400,13 @@ function VitalsEditModal({
         style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)", background: "var(--bg)" }}
       />
       {error && (
-        <p className="mt-1 text-xs text-red-600">JSON error: {error}</p>
+        <p
+          className="mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+          style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#EF4444" }} />
+          JSON error: {error}
+        </p>
       )}
     </ModalFrame>
   );
@@ -1483,7 +1501,7 @@ function MedicationsEditModal({
               type="button"
               onClick={() => removeRow(i)}
               aria-label="Remove medication"
-              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-[#DC2626]"
             >
               <svg
                 width="14"
@@ -1579,7 +1597,7 @@ function ProblemsEditModal({
                 type="button"
                 onClick={() => removeRow(i)}
                 aria-label="Remove problem"
-                className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+                className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-[#DC2626]"
               >
                 <svg
                   width="14"
@@ -1770,13 +1788,13 @@ function VitalsCard({
       label: "BP",
       value: vitals?.bp || `${last(series.bp_sys)}/${last(series.bp_dia)}`,
       values: series.bp_sys.map((s, i) => s - series.bp_dia[i]),
-      color: "text-rose-500",
+      color: "text-[#EF4444]",
     },
     {
       label: "HR",
       value: vitals?.hr || String(last(series.hr)),
       values: series.hr,
-      color: "text-blue-500",
+      color: "text-[#3B82F6]",
     },
     {
       label: "Temp",
@@ -1784,13 +1802,13 @@ function VitalsCard({
         ? `${vitals.temp_c}°C`
         : `${last(series.temp_c).toFixed(1)}°`,
       values: series.temp_c,
-      color: "text-amber-500",
+      color: "text-[#F59E0B]",
     },
     {
       label: "O₂",
       value: vitals?.o2_sat ? `${vitals.o2_sat}%` : `${last(series.o2_sat)}%`,
       values: series.o2_sat,
-      color: "text-emerald-500",
+      color: "text-[#10B981]",
     },
   ];
   return (
@@ -1850,9 +1868,12 @@ function LabsCard({ labs }: { labs: Lab[] }) {
           >
             <span className="w-24 shrink-0" style={{ color: "var(--text-2)" }}>{l.name}</span>
             <span
-              className="flex-1 truncate text-right tabular-nums font-bold"
-              style={{ color: l.abnormal ? "#dc2626" : "var(--text-1)" }}
+              className="flex-1 truncate text-right tabular-nums font-bold inline-flex items-center justify-end gap-1.5"
+              style={{ color: "var(--text-1)" }}
             >
+              {l.abnormal && (
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
+              )}
               {l.value} {l.unit}
             </span>
             <span className="hidden w-16 shrink-0 text-right text-xs sm:block" style={{ color: "var(--text-3)" }}>
@@ -1862,7 +1883,7 @@ function LabsCard({ labs }: { labs: Lab[] }) {
               values={l.trend}
               width={48}
               height={18}
-              className={l.abnormal ? "text-rose-500" : "text-slate-400"}
+              className={l.abnormal ? "text-[#EF4444]" : "text-slate-400"}
             />
           </li>
         ))}
@@ -2179,7 +2200,15 @@ function DocumentsCard({
         className="hidden"
         onChange={handleFileChange}
       />
-      {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
+      {error && (
+        <p
+          className="mb-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+          style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#EF4444" }} />
+          {error}
+        </p>
+      )}
       {documents.length === 0 ? (
         <Empty>No documents uploaded yet.</Empty>
       ) : (
@@ -2205,7 +2234,7 @@ function DocumentsCard({
                 type="button"
                 onClick={() => handleDelete(doc)}
                 aria-label={`Delete ${doc.filename}`}
-                className="shrink-0 opacity-0 transition group-hover:opacity-100 hover:text-red-600"
+                className="shrink-0 opacity-0 transition group-hover:opacity-100 hover:text-[#DC2626]"
                 style={{ color: "var(--text-3)" }}
               >
                 <svg

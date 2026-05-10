@@ -29,11 +29,11 @@ type Turn = {
   text: string;
 };
 
-const SPEAKER_STYLES: { label: string; bubble: string }[] = [
-  { label: "text-blue-700", bubble: "bg-blue-50 ring-blue-100" },
-  { label: "text-emerald-700", bubble: "bg-emerald-50 ring-emerald-100" },
-  { label: "text-violet-700", bubble: "bg-violet-50 ring-violet-100" },
-  { label: "text-amber-700", bubble: "bg-amber-50 ring-amber-100" },
+const SPEAKER_STYLES: { label: string; bubble: string; dot: string }[] = [
+  { label: "text-[#0F172A]", bubble: "bg-[#EFF6FF] ring-[#BFDBFE]", dot: "#3B82F6" },
+  { label: "text-[#0F172A]", bubble: "bg-[#ECFDF5] ring-[#A7F3D0]", dot: "#10B981" },
+  { label: "text-[#0F172A]", bubble: "bg-[#F5F3FF] ring-[#DDD6FE]", dot: "#8B5CF6" },
+  { label: "text-[#0F172A]", bubble: "bg-[#FFFBEB] ring-[#FDE68A]", dot: "#F59E0B" },
 ];
 
 function speakerStyle(speaker: number, doctorSpeaker: number | null) {
@@ -331,8 +331,12 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
         </div>
 
         {errorMessage && (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {errorMessage}
+          <div
+            className="mt-4 flex items-start gap-2 rounded-md px-4 py-3 text-sm"
+            style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+          >
+            <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
+            <span>{errorMessage}</span>
           </div>
         )}
 
@@ -378,8 +382,9 @@ function TurnLine({
   return (
     <div className={`rounded-lg px-3 py-2 ring-1 ring-inset ${style.bubble}`}>
       <div
-        className={`text-xs font-semibold uppercase tracking-wide ${style.label}`}
+        className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${style.label}`}
       >
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: style.dot }} />
         {label}
       </div>
       <div className="mt-0.5 text-base leading-7 text-zinc-900">
@@ -392,8 +397,8 @@ function TurnLine({
 function StatusBadge({ status }: { status: Status }) {
   if (status === "recording")
     return (
-      <span className="flex items-center gap-1.5 text-sm text-red-600">
-        <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-600" />
+      <span className="flex items-center gap-1.5 text-sm text-[#0F172A]">
+        <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#EF4444]" />
         Recording
       </span>
     );
@@ -408,7 +413,12 @@ function StatusBadge({ status }: { status: Status }) {
     return <span className="text-sm text-zinc-500">Connecting…</span>;
   if (status === "saving")
     return <span className="text-sm text-zinc-500">Saving…</span>;
-  return <span className="text-sm text-red-600">Error</span>;
+  return (
+    <span className="flex items-center gap-1.5 text-sm text-[#0F172A]">
+      <span className="inline-block h-2 w-2 rounded-full bg-[#EF4444]" />
+      Error
+    </span>
+  );
 }
 
 function formatTime(ms: number): string {

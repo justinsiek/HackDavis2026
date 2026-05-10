@@ -166,8 +166,12 @@ export default function AdmitPatientModal({ onClose, onAdmitted }: Props) {
           </div>
 
           {error && (
-            <p className="text-sm" style={{ color: "#dc2626" }}>
-              {error}
+            <p
+              className="inline-flex items-start gap-2 rounded-md px-3 py-2 text-sm"
+              style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+            >
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
+              <span>{error}</span>
             </p>
           )}
         </div>
@@ -328,7 +332,7 @@ function Field({
     <label className="block">
       <span className="text-sm font-bold" style={{ color: "var(--text-1)" }}>
         {label}
-        {required && <span style={{ color: "#dc2626" }}> *</span>}
+        {required && <span style={{ color: "#9CA3AF" }}> *</span>}
       </span>
       {children}
     </label>

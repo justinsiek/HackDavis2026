@@ -190,14 +190,13 @@ function DiffPanel({
 }) {
   const ring =
     tone === "red"
-      ? "ring-rose-200 bg-rose-50/50"
-      : "ring-emerald-200 bg-emerald-50/50";
-  const labelColor = tone === "red" ? "text-rose-700" : "text-emerald-700";
+      ? "ring-[#FECACA] bg-[#FEF2F2]"
+      : "ring-[#A7F3D0] bg-[#ECFDF5]";
+  const dotColor = tone === "red" ? "#EF4444" : "#10B981";
   return (
     <section className={`rounded-lg p-3 ring-1 ${ring}`}>
-      <h4
-        className={`mb-2 text-[11px] font-semibold uppercase tracking-wide ${labelColor}`}
-      >
+      <h4 className="mb-2 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#0F172A]">
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: dotColor }} />
         {label}
       </h4>
       <FieldValueDisplay field={field} value={value} />
@@ -217,7 +216,15 @@ function ChangeList({
   onSelect: (id: string) => void;
 }) {
   if (loadError) {
-    return <p className="text-sm text-red-600">{loadError}</p>;
+    return (
+      <p
+        className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm"
+        style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#EF4444" }} />
+        {loadError}
+      </p>
+    );
   }
   if (changes === null) {
     return <p className="text-sm italic text-zinc-400">Loading…</p>;

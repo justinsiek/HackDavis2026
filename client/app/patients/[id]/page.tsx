@@ -1413,13 +1413,13 @@ function FieldDiffAccordion({
       >
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className="text-[11px] uppercase tracking-wider"
+            className="text-[11px] uppercase tracking-wider leading-none"
             style={{ color: "#92400E", fontFamily: "PPNeueMontreal", fontWeight: 600 }}
           >
             {diff.label}
           </span>
           <span
-            className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-medium"
+            className="inline-flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-medium leading-none"
             style={{ background: "#FDE68A", color: "#78350F" }}
           >
             {count}

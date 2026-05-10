@@ -195,6 +195,7 @@ export default function PatientDetailPage({ params }: Props) {
       <ChatSidebar
         open={isChatOpen}
         onClose={() => setIsChatOpen(false)}
+        patientId={id}
         patientName={data?.patient?.name ?? ""}
       />
 
@@ -229,15 +230,32 @@ export default function PatientDetailPage({ params }: Props) {
 // Chat sidebar
 // ---------------------------------------------------------------------------
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  timestamp?: string;
+};
+
 function ChatSidebar({
   open,
   onClose,
+  patientId,
   patientName,
 }: {
   open: boolean;
   onClose: () => void;
+  patientId: string;
   patientName: string;
 }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // ESC closes
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -247,6 +265,74 @@ function ChatSidebar({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Load saved history when opened (or patient changes)
+  useEffect(() => {
+    if (!open || !patientId) return;
+    let cancelled = false;
+    setError(null);
+    setIsLoadingHistory(true);
+    api<{ messages: ChatMessage[] }>(`/api/patients/${patientId}/chat`)
+      .then((res) => {
+        if (cancelled) return;
+        setMessages(res.messages || []);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load chat");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingHistory(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, patientId]);
+
+  // Auto-scroll to bottom when messages or sending state change
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, isSending]);
+
+  // Focus input on open
+  useEffect(() => {
+    if (open && !isLoadingHistory) inputRef.current?.focus();
+  }, [open, isLoadingHistory]);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || isSending) return;
+    setError(null);
+    setIsSending(true);
+    setInput("");
+    // Optimistic: render user turn immediately
+    setMessages((m) => [...m, { role: "user", content: text }]);
+    try {
+      const res = await api<{ messages: ChatMessage[] }>(
+        `/api/patients/${patientId}/chat`,
+        {
+          method: "POST",
+          body: JSON.stringify({ message: text }),
+        }
+      );
+      setMessages(res.messages || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send");
+      // Roll back optimistic add and restore the input so the user can retry
+      setMessages((m) => m.slice(0, -1));
+      setInput(text);
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  }
+
   return (
     <aside
       aria-hidden={!open}
@@ -255,11 +341,11 @@ function ChatSidebar({
       }`}
     >
       <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-        <div>
+        <div className="min-w-0">
           <div className="text-xs uppercase tracking-wide text-zinc-500">
             Ask AI
           </div>
-          <div className="font-medium text-zinc-900">
+          <div className="truncate font-medium text-zinc-900">
             {patientName || "Patient"}
           </div>
         </div>
@@ -267,7 +353,7 @@ function ChatSidebar({
           type="button"
           onClick={onClose}
           aria-label="Close chat"
-          className="text-zinc-400 transition hover:text-zinc-900"
+          className="shrink-0 text-zinc-400 transition hover:text-zinc-900"
         >
           <svg
             width="18"
@@ -282,9 +368,87 @@ function ChatSidebar({
           </svg>
         </button>
       </header>
-      <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-zinc-400">
-        Chat coming soon.
+
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 py-3"
+      >
+        {isLoadingHistory ? (
+          <p className="mt-6 text-center text-sm text-zinc-400">
+            Loading conversation…
+          </p>
+        ) : messages.length === 0 ? (
+          <div className="mt-10 flex flex-col items-center px-4 text-center text-sm text-zinc-400">
+            <p className="text-zinc-500">Ask anything about this patient.</p>
+            <p className="mt-2 text-xs leading-5">
+              Answers are grounded in the structured record, uploaded documents,
+              and visit transcripts. Nothing is invented.
+            </p>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {messages.map((m, i) => (
+              <li
+                key={i}
+                className={
+                  m.role === "user"
+                    ? "flex justify-end"
+                    : "flex justify-start"
+                }
+              >
+                <div
+                  className={
+                    m.role === "user"
+                      ? "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-zinc-900 px-3 py-2 text-sm leading-6 text-white"
+                      : "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-zinc-100 px-3 py-2 text-sm leading-6 text-zinc-800"
+                  }
+                >
+                  {m.content}
+                </div>
+              </li>
+            ))}
+            {isSending && (
+              <li className="flex justify-start">
+                <div className="rounded-2xl rounded-bl-sm bg-zinc-100 px-3 py-2 text-sm italic text-zinc-500">
+                  Thinking…
+                </div>
+              </li>
+            )}
+          </ul>
+        )}
       </div>
+
+      {error && (
+        <p className="border-t border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">
+          {error}
+        </p>
+      )}
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+        className="flex items-end gap-2 border-t border-zinc-200 p-3"
+      >
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask about this patient…"
+          rows={1}
+          disabled={isSending}
+          className="max-h-32 flex-1 resize-none rounded-md border border-zinc-200 px-3 py-2 text-sm leading-5 text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={isSending || !input.trim()}
+          className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40"
+        >
+          Send
+        </button>
+      </form>
     </aside>
   );
 }

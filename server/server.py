@@ -109,7 +109,7 @@ def list_patients():
         return err
     result = db_call(
         supabase.table("patients")
-        .select("id, name, dob, sex, height_cm, weight_kg, admitted_at")
+        .select("id, name, dob, sex, height_cm, weight_kg, photo_data, admitted_at")
         .order("admitted_at", desc=True)
         .execute
     )
@@ -131,6 +131,7 @@ def admit_patient():
         "sex": body.get("sex") or None,
         "height_cm": body.get("height_cm"),
         "weight_kg": body.get("weight_kg"),
+        "photo_data": body.get("photo_data") or None,
         "admitted_by": doctor["id"],
     }
     inserted = db_call(supabase.table("patients").insert(payload).execute)
@@ -141,6 +142,17 @@ def admit_patient():
         supabase.table("patient_state").insert({"patient_id": patient["id"]}).execute
     )
     return jsonify({"patient": patient}), 201
+
+
+@app.route("/api/patients/<patient_id>", methods=["DELETE"])
+def delete_patient(patient_id):
+    _, err = require_doctor()
+    if err:
+        return err
+    db_call(
+        supabase.table("patients").delete().eq("id", patient_id).execute
+    )
+    return jsonify({"ok": True})
 
 
 @app.route("/api/patients/<patient_id>", methods=["GET"])

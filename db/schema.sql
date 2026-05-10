@@ -22,9 +22,13 @@ create table if not exists patients (
   sex          text,
   height_cm    numeric,
   weight_kg    numeric,
+  photo_data   text,
   admitted_at  timestamptz not null default now(),
   admitted_by  uuid not null references doctors(id)
 );
+
+-- For projects already created before `photo_data` was added:
+alter table patients add column if not exists photo_data text;
 
 -- ---------------------------------------------------------------------------
 -- 3. visits

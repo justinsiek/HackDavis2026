@@ -14,6 +14,7 @@ export type Patient = {
   sex: string | null;
   height_cm: number | null;
   weight_kg: number | null;
+  photo_data: string | null;
   admitted_at: string;
 };
 

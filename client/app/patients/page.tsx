@@ -48,6 +48,16 @@ export default function PatientsPage() {
     router.replace("/login");
   }
 
+  async function handleDelete(patientId: string, patientName: string) {
+    if (!window.confirm(`Delete ${patientName}? This cannot be undone.`)) return;
+    try {
+      await api(`/api/patients/${patientId}`, { method: "DELETE" });
+      setPatients((prev) => prev.filter((p) => p.id !== patientId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete patient");
+    }
+  }
+
   if (authLoading || !doctor) return null;
 
   return (
@@ -88,36 +98,74 @@ export default function PatientsPage() {
           </div>
         )}
 
-        <div className="rounded-xl bg-white shadow-sm ring-1 ring-zinc-200">
-          {isLoadingPatients ? (
-            <div className="px-6 py-10 text-center text-sm text-zinc-500">
-              Loading…
-            </div>
-          ) : patients.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-zinc-500">
-              No patients yet. Click <span className="font-medium">Admit patient</span> to add one.
-            </div>
-          ) : (
-            <ul className="divide-y divide-zinc-200">
-              {patients.map((p) => (
-                <li key={p.id}>
-                  <Link
-                    href={`/patients/${p.id}`}
-                    className="flex items-center justify-between px-6 py-4 hover:bg-zinc-50"
-                  >
-                    <div>
-                      <div className="font-medium text-zinc-900">{p.name}</div>
+        {isLoadingPatients ? (
+          <div className="rounded-xl bg-white px-6 py-10 text-center text-sm text-zinc-500 shadow-sm ring-1 ring-zinc-200">
+            Loading…
+          </div>
+        ) : patients.length === 0 ? (
+          <div className="rounded-xl bg-white px-6 py-10 text-center text-sm text-zinc-500 shadow-sm ring-1 ring-zinc-200">
+            No patients yet. Click{" "}
+            <span className="font-medium">Admit patient</span> to add one.
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {patients.map((p) => (
+              <li key={p.id} className="relative">
+                <Link
+                  href={`/patients/${p.id}`}
+                  className="group flex h-full flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 transition hover:shadow-md hover:ring-zinc-300"
+                >
+                  <div className="relative aspect-square w-full overflow-hidden bg-zinc-100">
+                    {p.photo_data ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.photo_data}
+                        alt={p.name}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 text-4xl font-semibold text-zinc-500">
+                        {initials(p.name)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-5 py-4">
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-medium text-zinc-900">
+                        {p.name}
+                      </div>
                       <div className="mt-0.5 text-xs text-zinc-500">
-                        {formatPatientMeta(p)}
+                        Admitted {new Date(p.admitted_at).toLocaleDateString()}
                       </div>
                     </div>
-                    <span className="text-zinc-400">→</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                    <span className="text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-zinc-500">
+                      →
+                    </span>
+                  </div>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(p.id, p.name)}
+                  aria-label={`Delete ${p.name}`}
+                  title={`Delete ${p.name}`}
+                  className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-zinc-900/60 text-white opacity-90 backdrop-blur-sm transition hover:bg-red-600 hover:opacity-100"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 14 14"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  >
+                    <path d="M2 2l10 10M12 2L2 12" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </main>
 
       {admitOpen && (
@@ -133,10 +181,9 @@ export default function PatientsPage() {
   );
 }
 
-function formatPatientMeta(p: Patient): string {
-  const parts: string[] = [];
-  if (p.dob) parts.push(`DOB ${p.dob}`);
-  if (p.sex) parts.push(p.sex);
-  parts.push(`admitted ${new Date(p.admitted_at).toLocaleDateString()}`);
-  return parts.join(" · ");
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }

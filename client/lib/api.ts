@@ -77,6 +77,27 @@ export type PatientDocument = {
   uploaded_by: string | null;
 };
 
+export const PLAN_ITEM_CATEGORIES = [
+  "URGENT",
+  "Follow-up",
+  "Tests/Labs",
+  "Medication",
+  "Monitoring",
+  "Lifestyle",
+] as const;
+export type PlanItemCategory = (typeof PLAN_ITEM_CATEGORIES)[number];
+
+export type PlanItem = {
+  id: string;
+  category: PlanItemCategory;
+  text: string;
+  done: boolean;
+  created_at: string;
+  created_by: string | null;
+  created_during_visit_id: string | null;
+  updated_at: string;
+};
+
 export type GetPatientResponse = {
   patient: Patient;
   current_state: PatientState | null;
@@ -85,6 +106,7 @@ export type GetPatientResponse = {
   is_first_view: boolean;
   documents: PatientDocument[];
   visits: Visit[];
+  plan_items: PlanItem[];
 };
 
 export const EDITABLE_FIELDS = [

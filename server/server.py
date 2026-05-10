@@ -143,6 +143,46 @@ UPDATE_PATIENT_STATE_TOOL = {
                     "comma-separated targets. ≤25 words. Empty if none."
                 ),
             },
+            "plan_items": {
+                "type": "array",
+                "description": (
+                    "NEW structured plan/next-step items the doctor articulated this "
+                    "visit. Append-only: do NOT re-emit items already in "
+                    "EXISTING_PLAN_ITEMS — those are still in effect. Emit each item "
+                    "ONCE, terse and action-oriented (≤12 words). Do not duplicate "
+                    "what's already captured in current_medications. Empty array if "
+                    "the transcript adds nothing new."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "enum": [
+                                "URGENT",
+                                "Follow-up",
+                                "Tests/Labs",
+                                "Medication",
+                                "Monitoring",
+                                "Lifestyle",
+                            ],
+                            "description": (
+                                "URGENT = immediate/safety-critical action; "
+                                "Follow-up = appointments, re-checks, callbacks; "
+                                "Tests/Labs = labs/imaging to order or review; "
+                                "Medication = new Rx, dose change, taper, stop; "
+                                "Monitoring = vitals/symptoms to watch; "
+                                "Lifestyle = diet, exercise, behavior counseling."
+                            ),
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "≤12 words, action-oriented fragment.",
+                        },
+                    },
+                    "required": ["category", "text"],
+                },
+            },
         },
         "required": [
             "synopsis",
@@ -152,16 +192,33 @@ UPDATE_PATIENT_STATE_TOOL = {
             "treatment_plan",
             "recent_vitals",
             "long_term_goals",
+            "plan_items",
         ],
     },
 }
 
 
-def extract_patient_state(current_state, transcript):
-    """Run the unified extractor; returns the new state subset."""
+def extract_patient_state(current_state, transcript, existing_plan_items=None):
+    """
+    Run the unified extractor.
+
+    Returns a tuple `(state, plan_items)`:
+      - `state`   — dict with the keys in STATE_FIELDS (writable to patient_state).
+      - `plan_items` — list of {category, text} dicts of NEW plan items the
+        doctor articulated this visit (caller is responsible for inserting
+        them into patient_plan_items, append-only).
+
+    `existing_plan_items` is passed to the model so it doesn't re-emit items
+    already on the patient's plan.
+    """
     base = state_subset(current_state)
     if not anthropic_client or not transcript.strip():
-        return base
+        return base, []
+    existing_for_prompt = [
+        {"category": p.get("category"), "text": p.get("text")}
+        for p in (existing_plan_items or [])
+        if not p.get("done")
+    ]
     response = anthropic_client.messages.create(
         model=LLM_MODEL,
         max_tokens=2000,
@@ -176,7 +233,11 @@ def extract_patient_state(current_state, transcript):
             "Carry forward unchanged fields verbatim. Only modify fields the transcript "
             "clearly addresses. Do NOT invent vitals, medications, diagnoses, or "
             "history that aren't explicitly mentioned. Empty string / empty array / "
-            "null for fields with no information."
+            "null for fields with no information.\n\n"
+            "PLAN ITEMS are append-only. Re-read EXISTING_PLAN_ITEMS carefully and "
+            "do NOT emit anything that's already covered there — those items are "
+            "still in effect. Only emit genuinely new actions the doctor decided "
+            "this visit."
         ),
         tools=[UPDATE_PATIENT_STATE_TOOL],
         tool_choice={"type": "tool", "name": "update_patient_state"},
@@ -185,6 +246,7 @@ def extract_patient_state(current_state, transcript):
                 "role": "user",
                 "content": (
                     f"CURRENT_STATE:\n{json.dumps(base, indent=2)}\n\n"
+                    f"EXISTING_PLAN_ITEMS:\n{json.dumps(existing_for_prompt, indent=2)}\n\n"
                     f"TRANSCRIPT:\n{transcript}"
                 ),
             }
@@ -192,8 +254,10 @@ def extract_patient_state(current_state, transcript):
     )
     for block in response.content:
         if block.type == "tool_use" and block.name == "update_patient_state":
-            return block.input
-    return base
+            output = block.input or {}
+            plan_items = output.pop("plan_items", []) or []
+            return output, plan_items
+    return base, []
 
 
 def summarize_visit(transcript):
@@ -461,6 +525,18 @@ def get_patient(patient_id):
     )
     visits = visits_result.data or []
 
+    plan_items_result = db_call(
+        supabase.table("patient_plan_items")
+        .select(
+            "id, category, text, done, created_at, created_by, "
+            "created_during_visit_id, updated_at"
+        )
+        .eq("patient_id", patient_id)
+        .order("created_at", desc=False)
+        .execute
+    )
+    plan_items = plan_items_result.data or []
+
     if visits:
         doctor_ids = list({v["doctor_id"] for v in visits})
         doctors_result = db_call(
@@ -481,6 +557,7 @@ def get_patient(patient_id):
         "is_first_view": is_first_view,
         "documents": docs_result.data or [],
         "visits": visits,
+        "plan_items": plan_items,
     })
 
 
@@ -547,6 +624,92 @@ def delete_document(patient_id, doc_id):
         supabase.table("patient_documents")
         .delete()
         .eq("id", doc_id)
+        .eq("patient_id", patient_id)
+        .execute
+    )
+    return jsonify({"ok": True})
+
+
+PLAN_ITEM_CATEGORIES = {
+    "URGENT",
+    "Follow-up",
+    "Tests/Labs",
+    "Medication",
+    "Monitoring",
+    "Lifestyle",
+}
+
+
+@app.route("/api/patients/<patient_id>/plan-items", methods=["POST"])
+def create_plan_item(patient_id):
+    doctor, err = require_doctor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    category = (body.get("category") or "").strip()
+    text = (body.get("text") or "").strip()
+    if category not in PLAN_ITEM_CATEGORIES:
+        return jsonify({"error": f"category must be one of {sorted(PLAN_ITEM_CATEGORIES)}"}), 400
+    if not text:
+        return jsonify({"error": "text is required"}), 400
+    inserted = db_call(
+        supabase.table("patient_plan_items")
+        .insert({
+            "patient_id": patient_id,
+            "category": category,
+            "text": text,
+            "created_by": doctor["id"],
+        })
+        .execute
+    )
+    if not inserted.data:
+        return jsonify({"error": "insert failed"}), 500
+    return jsonify({"plan_item": inserted.data[0]})
+
+
+@app.route("/api/patients/<patient_id>/plan-items/<item_id>", methods=["PATCH"])
+def update_plan_item(patient_id, item_id):
+    _, err = require_doctor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    payload = {}
+    if "category" in body:
+        category = (body.get("category") or "").strip()
+        if category not in PLAN_ITEM_CATEGORIES:
+            return jsonify({"error": f"category must be one of {sorted(PLAN_ITEM_CATEGORIES)}"}), 400
+        payload["category"] = category
+    if "text" in body:
+        text = (body.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text cannot be empty"}), 400
+        payload["text"] = text
+    if "done" in body:
+        payload["done"] = bool(body.get("done"))
+    if not payload:
+        return jsonify({"error": "no updatable fields provided"}), 400
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updated = db_call(
+        supabase.table("patient_plan_items")
+        .update(payload)
+        .eq("id", item_id)
+        .eq("patient_id", patient_id)
+        .execute
+    )
+    if not updated.data:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"plan_item": updated.data[0]})
+
+
+@app.route("/api/patients/<patient_id>/plan-items/<item_id>", methods=["DELETE"])
+def delete_plan_item(patient_id, item_id):
+    _, err = require_doctor()
+    if err:
+        return err
+    db_call(
+        supabase.table("patient_plan_items")
+        .delete()
+        .eq("id", item_id)
         .eq("patient_id", patient_id)
         .execute
     )
@@ -643,7 +806,16 @@ def finalize_visit(visit_id):
     )
     current_state = state_row.data[0] if state_row.data else {}
 
-    new_state = extract_patient_state(current_state, transcript)
+    existing_plan = db_call(
+        supabase.table("patient_plan_items")
+        .select("category, text, done")
+        .eq("patient_id", patient_id)
+        .execute
+    )
+
+    new_state, new_plan_items = extract_patient_state(
+        current_state, transcript, existing_plan_items=existing_plan.data or []
+    )
 
     db_call(
         supabase.table("patient_state")
@@ -655,6 +827,27 @@ def finalize_visit(visit_id):
         .eq("patient_id", patient_id)
         .execute
     )
+
+    # Append-only insert of structured plan items the doctor articulated this
+    # visit. Tagged with created_during_visit_id so the UI can show a "from
+    # visit" badge and we can trace provenance later.
+    rows_to_insert = []
+    for item in new_plan_items:
+        category = (item.get("category") or "").strip()
+        text = (item.get("text") or "").strip()
+        if category not in PLAN_ITEM_CATEGORIES or not text:
+            continue
+        rows_to_insert.append({
+            "patient_id": patient_id,
+            "category": category,
+            "text": text,
+            "created_by": doctor["id"],
+            "created_during_visit_id": visit_id,
+        })
+    if rows_to_insert:
+        db_call(
+            supabase.table("patient_plan_items").insert(rows_to_insert).execute
+        )
 
     db_call(
         supabase.table("doctor_patient_snapshots")
@@ -668,7 +861,7 @@ def finalize_visit(visit_id):
         .execute
     )
 
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "added_plan_items": len(rows_to_insert)})
 
 
 # ---------------------------------------------------------------------------
@@ -721,6 +914,15 @@ def build_chat_context(patient_id):
         .execute
     )
     state = state_row.data[0] if state_row.data else {}
+
+    plan_row = db_call(
+        supabase.table("patient_plan_items")
+        .select("category, text, done, created_at, created_during_visit_id")
+        .eq("patient_id", patient_id)
+        .order("created_at", desc=False)
+        .execute
+    )
+    plan_items = plan_row.data or []
 
     visits_row = db_call(
         supabase.table("visits")
@@ -775,12 +977,29 @@ def build_chat_context(patient_id):
         "admitted_at": patient.get("admitted_at"),
     }
 
+    plan_for_prompt = [
+        {
+            "category": p.get("category"),
+            "text": p.get("text"),
+            "done": bool(p.get("done")),
+            "from_visit": bool(p.get("created_during_visit_id")),
+            "created_at": p.get("created_at"),
+        }
+        for p in plan_items
+    ]
+
     parts = [
         "PATIENT_PROFILE:",
         json.dumps(patient_profile, indent=2, default=str),
         "",
         "STRUCTURED_RECORD (current source of truth):",
         json.dumps(state_subset(state), indent=2, default=str),
+        "",
+        "PLAN_ITEMS (structured plan & next steps; categories are URGENT, "
+        "Follow-up, Tests/Labs, Medication, Monitoring, Lifestyle; `done`=true "
+        "means it's been completed; `from_visit`=true means auto-extracted from "
+        "a visit transcript):",
+        json.dumps(plan_for_prompt, indent=2, default=str),
         "",
     ]
     if visits:

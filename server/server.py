@@ -86,17 +86,16 @@ UPDATE_PATIENT_STATE_TOOL = {
             "synopsis": {
                 "type": "string",
                 "description": (
-                    "One-sentence clinical synopsis in the standard format: "
-                    "'[age]yo [sex] with [key history], here for [chief complaint].' "
-                    "Update only if new key context emerges. Empty if not enough info yet."
+                    "ONE sentence in standard clinical format: "
+                    "'[age]yo [sex], [key hx], p/w [chief complaint].' "
+                    "≤25 words. Empty if not enough info."
                 ),
             },
             "current_presentation": {
                 "type": "string",
                 "description": (
-                    "The patient's subjective account of what they're experiencing this "
-                    "admission/visit — narrative form, what they said happened. "
-                    "Empty if nothing reported."
+                    "Patient's subjective account this visit, in 1-2 short sentences. "
+                    "Clinical shorthand OK. ≤40 words. Empty if nothing reported."
                 ),
             },
             "active_diagnoses": {
@@ -105,9 +104,9 @@ UPDATE_PATIENT_STATE_TOOL = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "condition": {"type": "string"},
-                        "since": {"type": "string", "description": "When first noted. Empty if unknown."},
-                        "notes": {"type": "string", "description": "Brief detail. Empty if none."},
+                        "condition": {"type": "string", "description": "Condition name only, no extras."},
+                        "since": {"type": "string", "description": "When first noted (e.g. '2024', '3 days ago'). Empty if unknown."},
+                        "notes": {"type": "string", "description": "≤10 words of clinical detail. Empty if none."},
                     },
                     "required": ["condition", "since", "notes"],
                 },
@@ -127,7 +126,10 @@ UPDATE_PATIENT_STATE_TOOL = {
             },
             "treatment_plan": {
                 "type": "string",
-                "description": "Plan and next steps for this admission. Short paragraph. Empty if none.",
+                "description": (
+                    "Plan & next steps as terse fragments separated by '; '. "
+                    "Action-oriented, no filler. ≤40 words. Empty if none."
+                ),
             },
             "recent_vitals": {
                 "type": ["object", "null"],
@@ -143,20 +145,24 @@ UPDATE_PATIENT_STATE_TOOL = {
             "physical_exam": {
                 "type": "string",
                 "description": (
-                    "Brief narrative of physical exam findings (lung sounds, edema, etc.). "
-                    "Empty if no exam performed."
+                    "Exam findings as terse fragments separated by '; ' "
+                    "(e.g. 'lungs CTAB; no edema; HR regular'). "
+                    "Clinical shorthand OK. ≤30 words. Empty if no exam."
                 ),
             },
             "past_medical_history": {
                 "type": "string",
                 "description": (
-                    "Pre-existing chronic conditions, prior surgeries, family history. "
-                    "Brief narrative. Empty if none documented yet."
+                    "Comma-separated list of conditions/surgeries/family hx. "
+                    "No prose, no preamble. ≤40 words. Empty if none."
                 ),
             },
             "long_term_goals": {
                 "type": "string",
-                "description": "Forward-looking care goals. Empty if none set yet.",
+                "description": (
+                    "Forward-looking goals as a single short sentence or "
+                    "comma-separated targets. ≤25 words. Empty if none."
+                ),
             },
         },
         "required": [
@@ -183,13 +189,17 @@ def extract_patient_state(current_state, transcript):
         model=LLM_MODEL,
         max_tokens=2000,
         system=(
-            "You are a clinical scribe. Update the patient's structured medical record "
-            "based on a new visit transcript. Carry forward all unchanged fields verbatim. "
-            "Only modify fields the transcript clearly addresses. Do NOT invent vitals, "
-            "medications, diagnoses, or history that aren't explicitly mentioned. "
-            "If a field has no information yet and the transcript doesn't mention it, "
-            "use an empty string for strings, an empty array for lists, and null for objects. "
-            "Always return a complete record using the update_patient_state tool."
+            "You are a clinical scribe. Update the patient's record based on a new "
+            "visit transcript using the update_patient_state tool.\n\n"
+            "BREVITY IS CRITICAL. Every text field is read at a glance by a busy "
+            "clinician. Use clinical shorthand, fragments separated by '; ', and "
+            "comma-separated lists. NEVER write paragraphs. NEVER pad with filler "
+            "phrases like 'the patient is' or 'it appears that'. Cut every word that "
+            "isn't load-bearing. Per-field word limits in the schema are hard caps.\n\n"
+            "Carry forward unchanged fields verbatim. Only modify fields the transcript "
+            "clearly addresses. Do NOT invent vitals, medications, diagnoses, or "
+            "history that aren't explicitly mentioned. Empty string / empty array / "
+            "null for fields with no information."
         ),
         tools=[UPDATE_PATIENT_STATE_TOOL],
         tool_choice={"type": "tool", "name": "update_patient_state"},
@@ -219,13 +229,13 @@ def narrate_diff(snapshot, current_state):
         return ""
     response = anthropic_client.messages.create(
         model=LLM_MODEL,
-        max_tokens=400,
+        max_tokens=200,
         system=(
-            "You write short clinical handoff notes. Given a doctor's prior view of "
-            "a patient and the current state, write 2-4 plain sentences describing "
-            "what has changed since they last saw the patient. Speak directly to the "
-            "doctor in second person. If nothing meaningful has changed, return an "
-            "empty string. No preamble, no markdown, no labels — just the prose."
+            "You write terse clinical handoff lines. Given a doctor's prior view and "
+            "the current state, summarize what changed in 1-2 short sentences, "
+            "≤40 words total. Use clinical shorthand. Speak directly to the doctor "
+            "(second person). Skip anything unchanged. If nothing meaningful "
+            "changed, return an empty string. No preamble, no markdown, no labels."
         ),
         messages=[
             {

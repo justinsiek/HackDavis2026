@@ -113,11 +113,11 @@ export function FieldHistoryPopup({
           <div>
             <h2
               id="field-history-title"
-              className="text-base font-semibold text-zinc-900"
+              className="text-base font-semibold text-[#0F172A]"
             >
               {FIELD_TITLES[field]} · history
             </h2>
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-[#0F172A]">
               {selectedChange
                 ? "Showing a single past edit. Click ‘Back to current’ to compare with what you last saw."
                 : "Compare what you last saw with the current record."}
@@ -127,7 +127,7 @@ export function FieldHistoryPopup({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900"
+            className="rounded-md p-1 text-[#0F172A] transition hover:bg-zinc-100 hover:text-[#0F172A]"
           >
             <svg
               width="18"
@@ -150,14 +150,14 @@ export function FieldHistoryPopup({
 
         <div className="flex max-h-[40vh] min-h-0 flex-col border-t border-zinc-200">
           <div className="flex items-center justify-between gap-2 px-5 py-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[#0F172A]">
               Prior edits
             </h3>
             {selectedChange && (
               <button
                 type="button"
                 onClick={() => setSelectedId(null)}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50"
+                className="rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-[#0F172A] hover:bg-zinc-50"
               >
                 ← Back to current
               </button>
@@ -227,11 +227,11 @@ function ChangeList({
     );
   }
   if (changes === null) {
-    return <p className="text-sm italic text-zinc-400">Loading…</p>;
+    return <p className="text-sm italic text-[#0F172A]">Loading…</p>;
   }
   if (changes.length === 0) {
     return (
-      <p className="text-sm italic text-zinc-400">
+      <p className="text-sm italic text-[#0F172A]">
         No prior edits to this field.
       </p>
     );
@@ -249,10 +249,10 @@ function ChangeList({
                 isSelected ? "bg-zinc-50" : "hover:bg-zinc-50"
               }`}
             >
-              <span className="truncate font-medium text-zinc-900">
+              <span className="truncate font-medium text-[#0F172A]">
                 {c.changed_by_name ?? "Unknown doctor"}
               </span>
-              <span className="shrink-0 text-xs text-zinc-500">
+              <span className="shrink-0 text-xs text-[#0F172A]">
                 {formatTimestamp(c.changed_at)}
               </span>
             </button>
@@ -294,7 +294,7 @@ function ProseValue({ value }: { value: unknown }) {
   if (value == null || value === "") return <EmptyValue />;
   if (typeof value !== "string") return <RawJsonFallback value={value} />;
   return (
-    <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-800">
+    <p className="whitespace-pre-wrap text-sm leading-6 text-[#0F172A]">
       {value}
     </p>
   );
@@ -308,17 +308,17 @@ function DiagnosesValue({ value }: { value: unknown }) {
       {items.map((d, i) => (
         <li key={i} className="py-1.5 first:pt-0 last:pb-0">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="font-medium text-zinc-900">
+            <span className="font-medium text-[#0F172A]">
               {d.condition || "—"}
             </span>
             {d.since && (
-              <span className="shrink-0 text-xs text-zinc-500">
+              <span className="shrink-0 text-xs text-[#0F172A]">
                 since {d.since}
               </span>
             )}
           </div>
           {d.notes && (
-            <p className="mt-0.5 text-sm leading-6 text-zinc-700">{d.notes}</p>
+            <p className="mt-0.5 text-sm leading-6 text-[#0F172A]">{d.notes}</p>
           )}
         </li>
       ))}
@@ -336,8 +336,8 @@ function MedicationsValue({ value }: { value: unknown }) {
           key={i}
           className="flex items-baseline justify-between gap-3 py-1.5 first:pt-0 last:pb-0"
         >
-          <span className="font-medium text-zinc-900">{m.name || "—"}</span>
-          <span className="text-right text-xs text-zinc-600">
+          <span className="font-medium text-[#0F172A]">{m.name || "—"}</span>
+          <span className="text-right text-xs text-[#0F172A]">
             {[m.dose, m.frequency].filter(Boolean).join(" · ") || "—"}
           </span>
         </li>
@@ -361,15 +361,15 @@ function VitalsValue({ value }: { value: unknown }) {
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
         {rows.map((r) => (
           <div key={r.label} className="flex items-baseline justify-between">
-            <dt className="text-xs uppercase tracking-wide text-zinc-500">
+            <dt className="text-xs uppercase tracking-wide text-[#0F172A]">
               {r.label}
             </dt>
-            <dd className="tabular-nums text-zinc-900">{r.val || "—"}</dd>
+            <dd className="tabular-nums text-[#0F172A]">{r.val || "—"}</dd>
           </div>
         ))}
       </dl>
       {v.taken_at && (
-        <p className="mt-2 text-xs text-zinc-500">
+        <p className="mt-2 text-xs text-[#0F172A]">
           taken {formatTimestamp(v.taken_at)}
         </p>
       )}
@@ -378,12 +378,12 @@ function VitalsValue({ value }: { value: unknown }) {
 }
 
 function EmptyValue() {
-  return <p className="text-sm italic text-zinc-400">Empty</p>;
+  return <p className="text-sm italic text-[#0F172A]">Empty</p>;
 }
 
 function RawJsonFallback({ value }: { value: unknown }): ReactNode {
   return (
-    <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-zinc-700">
+    <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-[#0F172A]">
       {JSON.stringify(value, null, 2)}
     </pre>
   );

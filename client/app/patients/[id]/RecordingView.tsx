@@ -280,14 +280,14 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
       <header className="border-b border-zinc-200 bg-white">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-6 py-4">
           <div>
-            <div className="text-xs uppercase tracking-wide text-zinc-500">
+            <div className="text-xs uppercase tracking-wide text-[#0F172A]">
               Recording with
             </div>
-            <div className="font-medium text-zinc-900">{patient.name}</div>
+            <div className="font-medium text-[#0F172A]">{patient.name}</div>
           </div>
           <div className="flex items-center gap-3">
             <StatusBadge status={status} />
-            <span className="font-mono text-sm tabular-nums text-zinc-600">
+            <span className="font-mono text-sm tabular-nums text-[#0F172A]">
               {formatTime(elapsedMs)}
             </span>
           </div>
@@ -304,7 +304,7 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
                     onClick={() =>
                       setDoctorSpeaker((curr) => (curr === null ? null : 1 - curr))
                     }
-                    className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-700 hover:underline"
+                    className="text-xs text-[#0F172A] underline-offset-2 hover:text-[#0F172A] hover:underline"
                   >
                     Swap doctor / patient
                   </button>
@@ -318,13 +318,13 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
                 />
               ))}
               {interimText && (
-                <p className="px-3 text-base italic leading-7 text-zinc-400">
+                <p className="px-3 text-base italic leading-7 text-[#0F172A]">
                   {interimText}
                 </p>
               )}
             </div>
           ) : (
-            <p className="text-sm italic text-zinc-400">
+            <p className="text-sm italic text-[#0F172A]">
               {status === "connecting" ? "Connecting…" : "Start speaking…"}
             </p>
           )}
@@ -341,7 +341,7 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
         )}
 
         <div className="mt-6 flex items-center justify-between">
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-[#0F172A]">
             Press{" "}
             <kbd className="rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono text-xs">
               Space
@@ -352,7 +352,7 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
             <button
               onClick={togglePause}
               disabled={status !== "recording" && status !== "paused"}
-              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm text-[#0F172A] hover:bg-zinc-50 disabled:opacity-50"
             >
               {status === "paused" ? "Resume" : "Pause"}
             </button>
@@ -387,7 +387,7 @@ function TurnLine({
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: style.dot }} />
         {label}
       </div>
-      <div className="mt-0.5 text-base leading-7 text-zinc-900">
+      <div className="mt-0.5 text-base leading-7 text-[#0F172A]">
         {turn.text}
       </div>
     </div>
@@ -404,15 +404,15 @@ function StatusBadge({ status }: { status: Status }) {
     );
   if (status === "paused")
     return (
-      <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+      <span className="flex items-center gap-1.5 text-sm text-[#0F172A]">
         <span className="inline-block h-2 w-2 rounded-full bg-zinc-400" />
         Paused
       </span>
     );
   if (status === "connecting")
-    return <span className="text-sm text-zinc-500">Connecting…</span>;
+    return <span className="text-sm text-[#0F172A]">Connecting…</span>;
   if (status === "saving")
-    return <span className="text-sm text-zinc-500">Saving…</span>;
+    return <span className="text-sm text-[#0F172A]">Saving…</span>;
   return (
     <span className="flex items-center gap-1.5 text-sm text-[#0F172A]">
       <span className="inline-block h-2 w-2 rounded-full bg-[#EF4444]" />

@@ -11,7 +11,7 @@ export default function Sparkline({
   values,
   width = 80,
   height = 24,
-  className = "text-zinc-700",
+  className = "text-[#0F172A]",
 }: Props) {
   if (values.length < 2) return null;
   const min = Math.min(...values);

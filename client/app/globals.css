@@ -50,7 +50,7 @@
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--text-1);
-  --font-sans: "PPNeueMontreal", system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-app), system-ui, -apple-system, sans-serif;
 }
 
 * {
@@ -61,6 +61,6 @@
 body {
   background: var(--bg);
   color: var(--text-1);
-  font-family: "PPNeueMontreal", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-app), system-ui, -apple-system, sans-serif;
   font-weight: 500;
 }

@@ -8,6 +8,13 @@ import { useAuth } from "@/lib/auth";
 import AdmitPatientModal from "./AdmitPatientModal";
 import TopBar from "@/components/TopBar";
 
+const PAGE_BG = "#F1F5F9";
+const CARD_BG = "#FFFFFF";
+const WRAPPER_SHADOW = "0 4px 24px rgba(15, 23, 42, 0.06)";
+const CARD_BORDER = "#E2E8F0";
+const CARD_SHADOW = "0 1px 2px rgba(15, 23, 42, 0.03)";
+const CARD_SHADOW_HOVER = "0 3px 8px rgba(15, 23, 42, 0.05)";
+
 export default function PatientsPage() {
   const router = useRouter();
   const { doctor, isLoading: authLoading, setDoctor } = useAuth();
@@ -69,37 +76,53 @@ export default function PatientsPage() {
   if (authLoading || !doctor) return null;
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-[#0F172A]">
+    <div
+      className="h-screen flex flex-col text-[#0F172A] overflow-hidden"
+      style={{ background: PAGE_BG }}
+    >
       <TopBar doctorName={doctor.name} onLogout={handleLogout} />
 
-      <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-8">
-        {/* Page header */}
-        <header className="pb-6">
-          <div className="flex items-end justify-between gap-6">
+      <main className="flex-1 min-h-0 w-full max-w-[1400px] mx-auto px-10 py-5 overflow-y-auto flex flex-col">
+        <div
+          className="my-auto rounded-2xl p-6"
+          style={{
+            background: CARD_BG,
+            boxShadow: WRAPPER_SHADOW,
+          }}
+        >
+          {/* Title row */}
+          <div className="flex items-start justify-between gap-6">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight leading-none">
+              <h1 className="text-4xl font-medium tracking-tight leading-none text-[#0F172A]">
                 Patients
               </h1>
-              <p className="text-sm mt-2 text-[#6B7280]">
+              <p className="text-sm mt-2.5 text-[#6B7280]">
                 {isLoadingPatients
                   ? "Loading…"
-                  : `${patients.length} patient${patients.length !== 1 ? "s" : ""} admitted`}
+                  : `${patients.length} patient${
+                      patients.length !== 1 ? "s" : ""
+                    } admitted`}
               </p>
             </div>
 
             <button
               onClick={() => setAdmitOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-[#0F172A] hover:bg-black transition-colors"
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-medium text-white bg-[#0F172A] hover:bg-black transition-colors"
             >
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <path d="M6.5 1v11M1 6.5h11" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
+                <path
+                  d="M6.5 1v11M1 6.5h11"
+                  stroke="white"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
               </svg>
               Admit patient
             </button>
           </div>
 
           {/* Search */}
-          <div className="mt-6 relative max-w-sm">
+          <div className="mt-6 relative max-w-xs">
             <svg
               width="14"
               height="14"
@@ -107,127 +130,178 @@ export default function PatientsPage() {
               fill="none"
               className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]"
             >
-              <circle cx="6" cy="6" r="4.25" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M9.25 9.25L12 12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              <circle
+                cx="6"
+                cy="6"
+                r="4.25"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              <path
+                d="M9.25 9.25L12 12"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
             </svg>
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search patients…"
+              placeholder="Search patients..."
               className="w-full rounded-lg pl-9 pr-3 py-2 text-sm bg-white border border-[#E5E7EB] placeholder-[#9CA3AF] outline-none focus:border-[#0F172A] transition-colors"
             />
           </div>
-        </header>
 
-        {/* Content */}
-        <section className="flex-1">
-          {error && (
-            <div
-              className="mb-4 flex items-start gap-2 rounded-lg px-4 py-3 text-sm"
-              style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
-            >
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
-              <span>{error}</span>
-            </div>
-          )}
+          {/* Content */}
+          <section className="mt-5">
+            {error && (
+              <div
+                className="mb-4 flex items-start gap-2 rounded-lg px-4 py-3 text-sm"
+                style={{
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  color: "#0F172A",
+                }}
+              >
+                <span
+                  className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ background: "#EF4444" }}
+                />
+                <span>{error}</span>
+              </div>
+            )}
 
-          {isLoadingPatients ? (
-            <div className="px-2 py-16 text-center text-sm text-[#9CA3AF]">
-              Loading patients…
-            </div>
-          ) : patients.length === 0 ? (
-            <div className="px-2 py-20 text-center">
-              <p className="text-sm font-medium mb-1 text-[#0F172A]">No patients yet</p>
-              <p className="text-sm text-[#6B7280]">
-                Click{" "}
-                <button
-                  onClick={() => setAdmitOpen(true)}
-                  className="underline underline-offset-2 text-[#0F172A] hover:text-black"
-                >
-                  Admit patient
-                </button>{" "}
-                to add one.
-              </p>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="px-2 py-16 text-center text-sm text-[#9CA3AF]">
-              No matches for &ldquo;{query}&rdquo;.
-            </div>
-          ) : (
-            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filtered.map((p) => (
-                <li key={p.id} className="relative group">
-                  <Link
-                    href={`/patients/${p.id}`}
-                    className="block overflow-hidden border border-[#E5E7EB] bg-white hover:border-[#0F172A] transition-colors"
-                  >
-                    {/* Photo / initials hero */}
-                    <div className="relative aspect-square overflow-hidden bg-[#F3F4F6]">
-                      {p.photo_data ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={p.photo_data}
-                          alt={p.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-3xl font-medium text-[#9CA3AF] tracking-wider">
-                          {initials(p.name)}
-                        </div>
-                      )}
-
-                      {/* Status pill top-left */}
-                      <span
-                        className="absolute top-3 left-3 inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium text-[#0F172A]"
-                        style={{
-                          background: p.has_new_updates ? "#FDE68A" : "#A7F3D0",
-                        }}
-                      >
-                        {p.has_new_updates ? "New" : "Current"}
-                      </span>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-[#F1F1F1]">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-[#0F172A] truncate">
-                          {p.name}
-                        </div>
-                        <div className="text-xs text-[#9CA3AF] mt-0.5">
-                          Admitted{" "}
-                          {new Date(p.admitted_at).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </div>
-                      </div>
-                      <span className="text-base text-[#D1D5DB] transition-transform group-hover:translate-x-0.5 group-hover:text-[#6B7280] shrink-0">
-                        →
-                      </span>
-                    </div>
-                  </Link>
-
-                  {/* Delete button (top-right of card, on hover) */}
+            {isLoadingPatients ? (
+              <div className="px-2 py-16 text-center text-sm text-[#9CA3AF]">
+                Loading patients…
+              </div>
+            ) : patients.length === 0 ? (
+              <div className="px-2 py-20 text-center">
+                <p className="text-sm font-medium mb-1 text-[#0F172A]">
+                  No patients yet
+                </p>
+                <p className="text-sm text-[#6B7280]">
+                  Click{" "}
                   <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleDelete(p.id, p.name);
-                    }}
-                    aria-label={`Delete ${p.name}`}
-                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 flex h-7 w-7 items-center justify-center rounded-full transition-all bg-white/85 text-[#6B7280] hover:text-[#0F172A] hover:bg-white backdrop-blur-md"
+                    onClick={() => setAdmitOpen(true)}
+                    className="underline underline-offset-2 text-[#0F172A] hover:text-black"
                   >
-                    <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                      <path d="M1.5 1.5l10 10M11.5 1.5l-10 10" />
-                    </svg>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                    Admit patient
+                  </button>{" "}
+                  to add one.
+                </p>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="px-2 py-16 text-center text-sm text-[#9CA3AF]">
+                No matches for &ldquo;{query}&rdquo;.
+              </div>
+            ) : (
+              <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filtered.map((p) => (
+                  <li key={p.id} className="relative group">
+                    <Link
+                      href={`/patients/${p.id}`}
+                      className="block rounded-2xl px-7 pt-6 pb-5 transition-all"
+                      style={{
+                        background: CARD_BG,
+                        border: `1px solid ${CARD_BORDER}`,
+                        boxShadow: CARD_SHADOW,
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.boxShadow = CARD_SHADOW_HOVER)
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.boxShadow = CARD_SHADOW)
+                      }
+                    >
+                      {/* Top row: avatar + status pill */}
+                      <div className="flex items-start justify-between">
+                        <div
+                          className="h-24 w-24 shrink-0 rounded-full overflow-hidden"
+                          style={{ background: "#F1F5F9" }}
+                        >
+                          {p.photo_data ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={p.photo_data}
+                              alt={p.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div
+                              className="w-full h-full flex items-center justify-center text-2xl font-medium tracking-wider"
+                              style={{ color: "#94A3B8" }}
+                            >
+                              {initials(p.name)}
+                            </div>
+                          )}
+                        </div>
+                        <span
+                          className="inline-flex items-center rounded-full px-3.5 py-1.5 text-sm font-medium"
+                          style={{
+                            background: p.has_new_updates
+                              ? "#FEF08A"
+                              : "#BBF7D0",
+                            color: "#0F172A",
+                          }}
+                        >
+                          {p.has_new_updates ? "New" : "Current"}
+                        </span>
+                      </div>
+
+                      {/* Bottom row: name + admitted + arrow */}
+                      <div className="mt-6 flex items-end justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-lg font-medium text-[#0F172A] truncate">
+                            {p.name}
+                          </div>
+                          <div className="text-base text-[#9CA3AF] mt-1.5">
+                            Admitted{" "}
+                            {new Date(p.admitted_at).toLocaleDateString(
+                              "en-US",
+                              {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              }
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xl text-[#D1D5DB] transition-transform group-hover:translate-x-0.5 group-hover:text-[#6B7280] shrink-0">
+                          →
+                        </span>
+                      </div>
+                    </Link>
+
+                    {/* Delete button (top-right of card, on hover) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleDelete(p.id, p.name);
+                      }}
+                      aria-label={`Delete ${p.name}`}
+                      className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 flex h-6 w-6 items-center justify-center rounded-full transition-all bg-white/90 text-[#9CA3AF] hover:text-[#0F172A] hover:bg-white shadow-sm backdrop-blur-md"
+                    >
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 13 13"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      >
+                        <path d="M1.5 1.5l10 10M11.5 1.5l-10 10" />
+                      </svg>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
       </main>
 
       {admitOpen && (

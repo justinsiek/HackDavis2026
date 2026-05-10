@@ -54,15 +54,25 @@ create index if not exists visits_patient_started_idx
 -- 4. patient_state (source of truth — one row per patient)
 -- ---------------------------------------------------------------------------
 create table if not exists patient_state (
-  patient_id           uuid primary key references patients(id) on delete cascade,
-  long_term_goals      text,
-  active_diagnoses     jsonb not null default '[]'::jsonb,
-  current_medications  jsonb not null default '[]'::jsonb,
-  recent_vitals        jsonb,
-  treatment_plan       text,
-  updated_at           timestamptz not null default now(),
-  updated_by_visit_id  uuid references visits(id)
+  patient_id            uuid primary key references patients(id) on delete cascade,
+  synopsis              text,
+  current_presentation  text,
+  active_diagnoses      jsonb not null default '[]'::jsonb,
+  current_medications   jsonb not null default '[]'::jsonb,
+  recent_vitals         jsonb,
+  treatment_plan        text,
+  physical_exam         text,
+  past_medical_history  text,
+  long_term_goals       text,
+  updated_at            timestamptz not null default now(),
+  updated_by_visit_id   uuid references visits(id)
 );
+
+-- For projects already created before these were added:
+alter table patient_state add column if not exists synopsis             text;
+alter table patient_state add column if not exists current_presentation text;
+alter table patient_state add column if not exists physical_exam        text;
+alter table patient_state add column if not exists past_medical_history text;
 
 -- ---------------------------------------------------------------------------
 -- 5. doctor_patient_snapshots (each doctor's "last understanding" per patient)

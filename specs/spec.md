@@ -13,20 +13,22 @@ Patient handoff in hospitals is informal and unstandardized. Doctor B walks into
 - Missed updates to the care plan
 - Lost long-term goals as patients move between providers
 
-**Our solution:** A web app where every doctor visit is recorded, transcribed, and used to automatically update a structured "source of truth" for the patient. Each doctor has their own per-patient snapshot of "what I last knew," so the next time they open the patient, the system shows them exactly what's changed since their last visit — both as a narrative and as a per-field diff.
+A clinical advisor we spoke with reframed the value: *"You're creating a clearing house where all that information is in one place — instead of clicking neurology, click nutrition, click..."*
+
+**Our solution:** A web app where every doctor visit is recorded, transcribed (with speaker diarization so we know who said what), and used by an LLM to automatically update a structured "source of truth" for the patient. Each doctor has their own per-patient snapshot of "what I last knew," so the next time they open the patient, the system shows them a one-paragraph narrative of exactly what's changed since their last visit.
 
 ---
 
 ## 2. Core User Flow
 
-1. **Admission.** A doctor opens "Admit patient," fills out a form (name, DOB, sex, height, weight). A patient row is created with empty source-of-truth fields.
-2. **First visit (Doctor A).** Doctor A opens the patient → hits "Start visit" → app records audio, streams it to a transcription service, displays a live transcript. Doctor A hits "End visit."
-3. **Update.** Backend finalizes the transcript, calls an LLM to extract structured field updates (goals, diagnoses, meds, vitals, plan), and **auto-applies them** to the patient's source of truth. Doctor A sees the updated fields in a review screen and can edit any field inline if the LLM got it wrong.
-4. **Snapshot.** When the visit closes, Doctor A's per-patient snapshot is set equal to the current source of truth.
-5. **Second visit (Doctor B).** Doctor B opens the same patient. Because Doctor B has no prior snapshot, they see the full current state with a "first time seeing this patient" banner. They start a visit, the same flow runs, the source of truth is updated, and Doctor B's snapshot is created.
+1. **Admission.** Any logged-in doctor opens "Admit patient," **takes a photo via the browser camera**, and fills out a small form (name, sex, height in ft/in). A patient row is created with empty source-of-truth fields.
+2. **First visit (Doctor A).** Doctor A opens the patient → hits "Record interaction" → the browser captures audio and streams it to Deepgram for **real-time diarized transcription**. Spacebar pauses/resumes; Done finalizes.
+3. **Update.** Backend stores the transcript on the visit row and runs a single unified LLM call that extracts the structured patient state in one shot (Anthropic tool use). The new state is written to `patient_state` and Doctor A's snapshot is upserted to match.
+4. **Snapshot.** Doctor A's per-patient `doctor_patient_snapshots` row now equals the current state.
+5. **Second visit (Doctor B).** Doctor B opens the same patient. Because Doctor B has no prior snapshot, the page shows a "first time seeing this patient" message. They start a visit; the same flow runs; Doctor B's snapshot is created.
 6. **Doctor A returns.** Doctor A opens the patient. The page shows:
-   - **"What's changed since you last saw this patient"** — an LLM-generated narrative summary at the top, followed by a per-field old → new diff for every field that changed between Doctor A's snapshot and the current state.
-   - The full current source of truth below.
+   - **"What's changed since you last saw this patient"** — an LLM-generated 2-4 sentence narrative comparing Doctor A's snapshot to the current state.
+   - The full current source of truth in a bento grid (synopsis, problems, meds, plan, vitals, labs, etc.).
    Doctor A starts a visit; the cycle repeats.
 
 ---
@@ -35,277 +37,327 @@ Patient handoff in hospitals is informal and unstandardized. Doctor B walks into
 
 | Area | Decision |
 |---|---|
-| Frontend | Next.js (App Router) + TailwindCSS |
+| Frontend | Next.js (App Router) + TailwindCSS, React 19 |
 | Backend | Flask (Python) |
-| DB | Supabase Postgres |
-| Auth | Hardcoded login by username; username maps 1:1 to a doctor row. No password verification beyond presence-check for the hackathon. |
-| Admission | Any logged-in doctor can admit via a form |
-| Recording | Browser microphone → real-time streaming transcription (Deepgram or AssemblyAI streaming WebSocket) |
-| Field-update mechanism | LLM auto-extracts and overwrites at end-of-visit; doctor can edit any field inline afterward |
-| Diff view | LLM-generated narrative + per-field old → new diff |
-| Initial source-of-truth fields | `long_term_goals`, `active_diagnoses`, `current_medications`, `recent_vitals`, `treatment_plan` (the schema may store more than is displayed; start with this displayed set) |
-| Concurrency | One active visit per patient at a time. Starting a visit takes a soft lock; UI prevents a second doctor from starting one. |
+| DB | Supabase Postgres (`service_role` key on the server side, RLS bypassed) |
+| LLM | Anthropic Claude (`claude-sonnet-4-6`), tool use for structured extraction |
+| Streaming transcription | Deepgram (`@deepgram/sdk`, model `nova-3-medical`), with `diarize: "true"` |
+| Auth | Hardcoded login by username only (no password verification). Two seeded usernames: `doctor1`, `doctor2`. |
+| Admission | Any logged-in doctor admits via a modal that includes **a required browser-camera photo capture step** plus name, sex, height (ft/in). |
+| Patient photo storage | Base64 JPEG (~30-50KB) stored in `patients.photo_data`. Hackathon-pragmatic; would swap to Supabase Storage at scale. |
+| Field-update mechanism | LLM auto-extracts and overwrites at end-of-visit. **No review/edit step** — doctor's edits would happen by re-recording. |
+| Diff view | LLM-generated narrative only — no per-field old→new diff cards. |
+| Patient state fields | `synopsis`, `current_presentation`, `active_diagnoses`, `current_medications`, `treatment_plan`, `recent_vitals`, `physical_exam`, `past_medical_history`, `long_term_goals`. **No allergies field** (intentionally cut). |
+| Vitals/labs trends | Mocked deterministically per-patient on the frontend (seeded from `patient_id`). The LLM still extracts the latest values; the trend graphs are visual scaffolding for the demo. |
+| Speaker diarization | On. First final-result speaker becomes "Doctor"; second is "Patient". Tap-to-swap UI if the heuristic gets it wrong. Speakers ≥2 are clamped to 1 (only ever 2 voices in this product). |
+| Recording UX | Spacebar toggles pause/resume; live transcript shown as colored speaker bubbles for finals + plain gray for interim. Done button finalizes the visit. |
+| Concurrency | No DB-level lock. Hackathon scope assumes one doctor recording one patient at a time. |
 
 ---
 
 ## 4. Architecture
 
 ```
-┌────────────────────┐     HTTPS / WS     ┌────────────────────┐
-│   Next.js (web)    │ ─────────────────► │   Flask backend    │
-│  - login           │                    │  - REST endpoints  │
-│  - patient list    │ ◄──────────────────│  - WS for STT      │
-│  - patient detail  │                    │  - LLM calls       │
-│  - record visit    │                    └──────────┬─────────┘
-└────────────────────┘                               │
-         │                                           │
-         │ direct browser ► STT provider WS          │ Postgres
-         ▼ (streaming audio + transcript)            ▼
-┌────────────────────┐                    ┌────────────────────┐
-│  Deepgram /        │                    │     Supabase       │
-│  AssemblyAI        │                    │     (Postgres)     │
-└────────────────────┘                    └────────────────────┘
+┌────────────────────┐     HTTPS         ┌────────────────────┐
+│   Next.js (web)    │ ─────────────────►│   Flask backend    │
+│  - login           │                   │  - REST endpoints  │
+│  - patient cards   │ ◄─────────────────│  - LLM (Anthropic) │
+│  - bento detail    │                   │  - Supabase client │
+│  - record visit    │                   └──────────┬─────────┘
+└─────────┬──────────┘                              │
+          │                                         │ Postgres
+          │ direct browser ►  Deepgram WS           ▼
+          ▼ (audio + diarized transcript)  ┌────────────────────┐
+┌────────────────────┐                     │     Supabase       │
+│  Deepgram          │                     │     (Postgres)     │
+│  nova-3-medical    │                     └────────────────────┘
+└────────────────────┘
 ```
 
-**Audio path.** Browser captures mic → opens a WebSocket either (a) directly to the STT provider with a short-lived token minted by Flask, or (b) through Flask which proxies to STT. **Default to (a)** to keep Flask out of the audio hot path. Flask receives only the finalized transcript at end-of-visit.
+**Audio path.** Browser captures mic via `MediaRecorder` (webm/opus, 100ms timeslice). The Deepgram SDK opens a WS directly from the browser, authenticated with the **raw Deepgram API key** exposed via `NEXT_PUBLIC_DEEPGRAM_API_KEY`. Flask is *not* in the audio hot path — it only receives the finalized transcript at end-of-visit.
 
-**LLM calls.** Flask calls the LLM (OpenAI or Anthropic) for two operations:
-1. **Extract** — given current patient state + transcript, return a structured JSON of updated fields.
-2. **Narrate diff** — given a doctor's snapshot + current patient state, return a 2–4 sentence summary of what changed.
+> **Security caveat.** Putting the key in the browser bundle exposes it to anyone with access to the running app. Acceptable for a local hackathon demo; for any deployment we'd switch back to server-side token minting via Deepgram's `/v1/auth/grant` endpoint (this requires an API key with Member-or-higher scope, which our key didn't have at the time).
+
+**LLM calls.** Flask calls Anthropic for two operations:
+1. **Extract** — one tool-use call (`update_patient_state`) that takes the current state + new transcript and returns the full updated state. Schema-enforced via the tool's `input_schema`.
+2. **Narrate diff** — given a doctor's snapshot + current state, return 2-4 sentences. Plain text response.
+
+**Stale-connection retry.** Supabase HTTP/2 connections occasionally drop. Every Supabase call goes through a `db_call()` wrapper that retries once on `httpx.RemoteProtocolError`, `httpx.ReadError`, or `httpx.ConnectError`.
 
 ---
 
 ## 5. Data Model
 
-All tables live in Supabase Postgres. UUID primary keys.
+All tables live in Supabase Postgres. UUID primary keys. Service-role key bypasses RLS. Schema lives in [db/schema.sql](../db/schema.sql).
 
 ### `doctors`
 | column | type | notes |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `username` | `text` UNIQUE | used for hardcoded login |
-| `name` | `text` | display name (e.g., "Dr. Patel") |
+| `username` | `text` UNIQUE | hardcoded login |
+| `name` | `text` | display name |
 | `created_at` | `timestamptz` | default `now()` |
 
-Seeded with ~3–5 doctors for the demo.
+Seeded with `doctor1` and `doctor2` (any password works at login — we don't validate).
 
 ### `patients`
 | column | type | notes |
 |---|---|---|
 | `id` | `uuid` PK | |
 | `name` | `text` | |
-| `dob` | `date` | |
-| `sex` | `text` | |
-| `height_cm` | `numeric` | |
-| `weight_kg` | `numeric` | |
+| `dob` | `date` | nullable |
+| `sex` | `text` | nullable |
+| `height_cm` | `numeric` | nullable; admission form collects ft+in, converts |
+| `weight_kg` | `numeric` | nullable; reserved, not collected today |
+| `photo_data` | `text` | base64 JPEG data URL captured at admission |
 | `admitted_at` | `timestamptz` | default `now()` |
 | `admitted_by` | `uuid` FK → doctors | |
 
 ### `patient_state`  *(source of truth — one row per patient)*
 | column | type | notes |
 |---|---|---|
-| `patient_id` | `uuid` PK FK → patients | |
-| `long_term_goals` | `text` | nullable |
+| `patient_id` | `uuid` PK FK → patients ON DELETE CASCADE | |
+| `synopsis` | `text` | one-sentence clinical summary ("65yo F with HTN, here for SOB") |
+| `current_presentation` | `text` | the patient's subjective account this admission |
 | `active_diagnoses` | `jsonb` | array of `{condition, since, notes}` |
-| `current_medications` | `jsonb` | array of `{name, dose, frequency, started_at}` |
-| `recent_vitals` | `jsonb` | `{bp, hr, temp_c, o2_sat, taken_at}` |
-| `treatment_plan` | `text` | short-term plan / next steps |
-| `updated_at` | `timestamptz` | bumped on every visit close |
+| `current_medications` | `jsonb` | array of `{name, dose, frequency}` |
+| `treatment_plan` | `text` | plan & next steps |
+| `recent_vitals` | `jsonb` | `{bp, hr, temp_c, o2_sat, taken_at}` — latest values only |
+| `physical_exam` | `text` | brief narrative of exam findings |
+| `past_medical_history` | `text` | pre-existing conditions, prior surgeries, family history |
+| `long_term_goals` | `text` | forward-looking care goals |
+| `updated_at` | `timestamptz` | bumped on every visit finalize |
 | `updated_by_visit_id` | `uuid` FK → visits | last visit that wrote to this row |
 
-Row is created (with all fields null/empty) at the moment a patient is admitted.
+Row is created (with all fields null/empty) when the patient is admitted.
 
 ### `visits`
 | column | type | notes |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `patient_id` | `uuid` FK | |
+| `patient_id` | `uuid` FK ON DELETE CASCADE | |
 | `doctor_id` | `uuid` FK | |
-| `started_at` | `timestamptz` | |
+| `started_at` | `timestamptz` | default `now()` |
 | `ended_at` | `timestamptz` | nullable while active |
-| `status` | `text` | `active` \| `processing` \| `complete` |
-| `transcript` | `text` | finalized transcript |
-| `llm_extracted_fields` | `jsonb` | what the LLM proposed before any manual edits |
-| `final_fields` | `jsonb` | what was committed to `patient_state` (post-edit) |
+| `status` | `text` | `active` \| `processing` \| `complete` (CHECK constraint) |
+| `transcript` | `text` | finalized diarized transcript (`Doctor: ...\nPatient: ...`) |
+| `llm_extracted_fields` | `jsonb` | reserved for future review-step UI; currently unused |
+| `final_fields` | `jsonb` | reserved; currently unused |
+
+Index: `visits(patient_id, started_at desc)`.
 
 ### `doctor_patient_snapshots`
-Captures what a given doctor last knew about a given patient. Created lazily.
+What a given doctor last knew about a given patient. Created lazily on visit finalize.
 
 | column | type | notes |
 |---|---|---|
-| `doctor_id` | `uuid` FK | composite PK with patient_id |
-| `patient_id` | `uuid` FK | |
-| `snapshot` | `jsonb` | full copy of `patient_state` at time of snapshot |
-| `snapshot_at` | `timestamptz` | |
+| `doctor_id` | `uuid` FK ON DELETE CASCADE | composite PK with patient_id |
+| `patient_id` | `uuid` FK ON DELETE CASCADE | |
+| `snapshot` | `jsonb` | the full state subset captured at the moment the visit closed |
+| `snapshot_at` | `timestamptz` | default `now()` |
 | `last_visit_id` | `uuid` FK → visits | the visit that produced this snapshot |
 
-Snapshot is **upserted** at the end of every visit — `doctor_id` = the doctor who conducted the visit, `patient_id` = the patient.
+The snapshot is **upserted** at the end of every visit — `doctor_id` = the doctor who conducted the visit.
 
 ---
 
 ## 6. Backend API (Flask)
 
-All endpoints return JSON. Auth: client sends `X-Doctor-Username` header; Flask resolves it to a `doctor_id` and rejects unknown usernames.
+All endpoints return JSON. Auth: client sends `X-Doctor-Username` header; Flask resolves it and rejects unknown usernames with 401.
 
 ### Auth
-- `POST /api/login` — `{ username }` → `{ doctor: {id, username, name} }`. Looks up the username; 401 if not found. (No password.)
+- `POST /api/login` — `{ username }` → `{ doctor: {id, username, name} }`. Looks up the username; 401 if not found.
 
 ### Patients
-- `GET /api/patients` — list of all patients (id, name, dob, admitted_at).
-- `POST /api/patients` — admit a new patient. Body: `{ name, dob, sex, height_cm, weight_kg }`. Creates `patients` row + empty `patient_state` row.
+- `GET /api/patients` — list of all patients (id, name, dob, sex, height_cm, weight_kg, **photo_data**, admitted_at).
+- `POST /api/patients` — admit. Body: `{ name, sex, height_cm, photo_data }`. Creates `patients` row + empty `patient_state` row.
 - `GET /api/patients/:id` — returns:
   ```json
   {
     "patient": { ...patient row... },
-    "current_state": { ...patient_state row... },
+    "current_state": { ...patient_state row or null... },
     "viewer_snapshot": { ...doctor_patient_snapshots row or null... },
-    "diff": {
-      "narrative": "string or null",
-      "fields": [
-        { "field": "current_medications", "before": [...], "after": [...] }
-      ]
-    },
-    "is_first_view": true|false
+    "narrative": "string or null",
+    "is_first_view": true | false
   }
   ```
-  Server computes the per-field diff between `viewer_snapshot.snapshot` and `current_state`. If no snapshot exists, `diff` is null and `is_first_view` is true.
+  If the viewer has no snapshot, `is_first_view: true` and `narrative: null`. If they have one and it's older than `current_state.updated_at`, `narrative` is the LLM-generated 2-4 sentence summary. If snapshot equals current state, `narrative` is `null`.
+- `DELETE /api/patients/:id` — deletes the patient. Cascades remove `patient_state`, all `visits`, and all snapshots. Used by the trash button on patient cards.
 
 ### Visits
-- `POST /api/visits/start` — `{ patient_id }` → `{ visit_id, stt_token }`. Creates a `visits` row with `status=active`. Mints a short-lived STT-provider token. Rejects with 409 if another active visit exists for this patient.
-- `POST /api/visits/:id/finalize` — `{ transcript }`. Sets `status=processing`, stores transcript, calls the LLM extractor, writes `llm_extracted_fields`, applies them to `patient_state`, also writes `final_fields = llm_extracted_fields` initially. Returns the proposed update for the doctor's review screen.
-- `PATCH /api/visits/:id/fields` — `{ fields: {...} }`. Doctor's manual edits during the review screen. Updates `final_fields` and re-applies to `patient_state`.
-- `POST /api/visits/:id/close` — finalizes the visit: sets `status=complete`, `ended_at=now()`, and **upserts** the doctor's snapshot to match `patient_state`.
+- `POST /api/visits/start` — `{ patient_id }` → `{ visit_id }`. Creates a `visits` row with `status='active'`. (Earlier the spec called for minting a Deepgram temp token here; we currently expose the raw key in the browser instead — see §9.)
+- `POST /api/visits/:id/finalize` — `{ transcript }`. Single-shot endpoint that:
+  1. Saves transcript and marks the visit `complete`.
+  2. Loads current `patient_state`.
+  3. Calls the LLM extractor.
+  4. Writes the new state to `patient_state` (`updated_at`, `updated_by_visit_id`).
+  5. **Upserts the doctor's snapshot** to match the new state.
 
-### Diff narrative
-- The narrative is generated server-side inside `GET /api/patients/:id` (cached on the snapshot row keyed by `(snapshot_at, patient_state.updated_at)` so we don't re-call the LLM on every page load).
+  Returns `{ ok: true }`. (The spec's earlier two-step `/finalize` + `/close` design with a doctor-review screen was collapsed into this single endpoint.)
+
+### Health
+- `GET /api/health` — smoke test. Selects count from `doctors`, returns `{ ok, doctors_count }`.
 
 ---
 
-## 7. LLM Prompts
+## 7. LLM
 
-### Extractor (called in `finalize`)
+**Model.** `claude-sonnet-4-6` for both extraction and narration.
 
-**System:**
-> You are a clinical scribe. Given a patient's current structured record and a new visit transcript, output the updated record as strict JSON matching the provided schema. Only change fields that the transcript clearly addresses; carry over unchanged fields verbatim. If a field is implied but not stated, leave it unchanged. Never invent vitals or medications not mentioned.
+### Extractor — `update_patient_state` tool
 
-**User:**
+A Claude tool whose `input_schema` enforces the full state shape:
+```python
+{
+  "synopsis": str,
+  "current_presentation": str,
+  "active_diagnoses": [ {condition, since, notes}, … ],
+  "current_medications": [ {name, dose, frequency}, … ],
+  "treatment_plan": str,
+  "recent_vitals": { bp, hr, temp_c, o2_sat, taken_at } | null,
+  "physical_exam": str,
+  "past_medical_history": str,
+  "long_term_goals": str
+}
 ```
-CURRENT_STATE:
-{json of patient_state}
 
-TRANSCRIPT:
-{full transcript}
+**System prompt:**
+> You are a clinical scribe. Update the patient's structured medical record based on a new visit transcript. Carry forward all unchanged fields verbatim. Only modify fields the transcript clearly addresses. Do NOT invent vitals, medications, diagnoses, or history that aren't explicitly mentioned. If a field has no information yet and the transcript doesn't mention it, use empty string for strings, empty array for lists, and null for objects. Always return a complete record using the update_patient_state tool.
 
-Return JSON with keys: long_term_goals, active_diagnoses, current_medications, recent_vitals, treatment_plan.
-```
+**User content:** JSON-stringified current state + the diarized transcript.
 
-Use the model's structured-output / JSON mode. Validate against a Pydantic schema before writing.
+`tool_choice` is forced to `{type: "tool", name: "update_patient_state"}` so we always get a valid structured response. Tool input is read directly from `block.input`; no manual parsing.
 
 ### Diff narrator
 
-**System:**
-> You write very short clinical handoff notes. Given a doctor's prior view of a patient and the current state, write 2–4 plain sentences describing what has changed since they last saw the patient. Do not list things that haven't changed. Speak directly to the doctor in second person.
+**System prompt:**
+> You write short clinical handoff notes. Given a doctor's prior view of a patient and the current state, write 2-4 plain sentences describing what has changed since they last saw the patient. Speak directly to the doctor in second person. If nothing meaningful has changed, return an empty string. No preamble, no markdown, no labels — just the prose.
 
-**User:**
-```
-YOUR_LAST_VIEW (as of {snapshot_at}):
-{json of snapshot}
+**User content:** snapshot subset + current state subset, both JSON-stringified.
 
-CURRENT_STATE (as of {updated_at}):
-{json of patient_state}
-```
+A short-circuit equality check skips the LLM call entirely if `snapshot == current_state`.
 
 ---
 
 ## 8. Frontend Pages (Next.js App Router)
 
 ### `/login`
-Single text input for username + Continue button. On success, store `{doctor_id, username, name}` in a client-side context and a cookie. Redirect to `/patients`.
+Username + password fields. Password is captured but ignored server-side. On success, store `{id, username, name}` in `localStorage` and a small React context. Redirect to `/patients`.
 
 ### `/patients`
 - Header: "Logged in as Dr. X" + logout.
-- "Admit patient" button → opens modal with admission form.
-- List of all patients, each row links to `/patients/[id]`.
-- Each row shows a small badge: "New changes" if the patient's `updated_at` is newer than the viewing doctor's snapshot for this patient.
+- "Admit patient" button → modal.
+- **Card grid**: 1 column on mobile, 2 on small, 3 on large. Each card has a square photo at top (or initials gradient if missing), name + admitted date below, and a small ✕ button overlaid on the top-right of the photo for quick delete (browser confirm prompt → `DELETE /api/patients/:id` → optimistic remove).
 
-### `/patients/[id]`
-Sections, top to bottom:
-1. **Patient header** — name, DOB/age, sex, height, weight, admitted date.
-2. **Changes since you last saw this patient** *(only if `viewer_snapshot` exists and `diff.fields.length > 0`)*
-   - Narrative paragraph (from LLM).
-   - Per-field diff cards: field name, before (gray, strikethrough where appropriate), after (highlighted).
-   - "First time seeing this patient" banner instead, if `is_first_view`.
-3. **Current source of truth** — the structured fields rendered cleanly:
-   - Long-term goals (text)
-   - Active diagnoses (list)
-   - Current medications (table: name, dose, frequency)
-   - Recent vitals (BP / HR / Temp / O₂ with timestamp)
-   - Treatment plan (text)
-4. **"Start visit" button.** Opens the recording view in-place.
-5. **Visit history** — collapsed list of prior visits for this patient (date, doctor, expandable transcript).
+### Admit Patient modal
+- **Camera capture step at the top** using `getUserMedia({video})`. Live square preview with a "Take photo" button; once captured, freeze and show "Retake". The captured frame is center-cropped to 480×480 and converted to a JPEG base64 data URL via canvas.
+- Fields below: name (required), sex (dropdown), height (ft + in inputs).
+- Submit is disabled until a photo is captured AND a name is filled.
+- Camera tracks are cleaned up on unmount and on retake.
 
-### Recording view (in-place on patient detail)
-- Live transcript pane that fills with text as STT streams in.
-- Mic level indicator.
-- Big "End visit" button.
-- On end: switch to "Review extracted updates" view.
+### `/patients/[id]` — bento layout
+A 12-column grid (single column on mobile), 4 rows tall. Most sections are visible at a glance; long content shows a "Show all →" link in the card header that opens a centered modal.
 
-### Review extracted updates view
-- Side-by-side: "Before" (current state) vs "Proposed after" (LLM extraction).
-- Each field is editable (textarea / structured editor for diagnoses, meds, vitals).
-- "Save & close visit" button → calls `PATCH /fields` then `POST /close`. Returns to patient detail page, which now shows the updated state.
+| Row | Contents |
+|---|---|
+| 1 | **Patient header** (col-7): photo, name, age/sex/height/admitted date, synopsis sentence. **What's changed** (col-5, amber accent): narrative, "first time" message, or "nothing new". |
+| 2 | **Active problems** (col-4) · **Current medications** (col-4) · **Plan & next steps** (col-4) |
+| 3 | **Vitals** (col-7): 4 sparkline tiles (BP, HR, Temp, O₂). **Labs** (col-5): compact list with abnormal flags + per-row sparkline. |
+| 4 | **Subjective** (col-3) · **Physical exam** (col-3) · **Past medical history** (col-3) · **Long-term goals** (col-3) |
+
+- Text cards use `line-clamp-4` and only show "Show all" if content > ~90 chars.
+- List cards (problems, medications) show top 3 + "+ N more" → modal with the full list/table.
+- Vitals/labs trends are mocked deterministically per patient (see §10).
+- The "Record interaction" button lives in the page header, not the bento grid.
+
+### Recording view (in-place; replaces the bento)
+- Patient name + status badge + elapsed timer in a header strip.
+- Live transcript pane: each finalized turn renders as a colored speaker bubble ("Doctor" in blue, "Patient" in emerald). Interim text (from Deepgram) renders below as plain gray italics — Deepgram doesn't include speaker tags on interim results.
+- "Swap doctor / patient" link appears once a first turn lands; flips the labels & colors for the whole session.
+- Spacebar (and a Pause button) toggle `MediaRecorder.pause()` / `resume()`. Recording timer pauses with it.
+- Done button: stops mic, closes Deepgram socket, posts the transcript to `/finalize`. The patient detail page then re-fetches and shows the updated bento.
+
+There is **no separate "review extracted updates" screen** in v1 — the LLM's output is committed directly. The doctor's only correction loop is to record another visit and re-state things.
 
 ---
 
 ## 9. Streaming Transcription Integration
 
-Use **Deepgram's** browser-side streaming SDK (or AssemblyAI's equivalent) for the demo because it's the lowest-latency path with the least Flask plumbing.
+**Library.** `@deepgram/sdk` v5 (browser side). `DeepgramClient.listen.v1.connect()` opens a WS to Deepgram.
 
-1. Doctor hits "Start visit" → frontend calls `POST /api/visits/start`.
-2. Flask creates a visit row and mints a temporary Deepgram token (`/auth/grant` style endpoint, scoped to the project, valid for ~10 minutes).
-3. Frontend opens a Deepgram WebSocket using that token, attaches the user's mic via `MediaRecorder` / `getUserMedia`.
-4. Deepgram emits interim and final transcript chunks. Frontend appends finals to a local string and shows interims in italics.
-5. On "End visit," frontend closes the WS and `POST /api/visits/:id/finalize` with the accumulated final transcript.
+**Connect args we use:**
+```ts
+{
+  model: "nova-3-medical",
+  language: "en-US",
+  smart_format: "true",
+  interim_results: "true",
+  endpointing: "300",
+  vad_events: "true",
+  diarize: "true",
+  Authorization: `Token ${DEEPGRAM_API_KEY}`,
+}
+```
 
-Fallback for poor connectivity: if streaming WS fails, frontend records audio with `MediaRecorder`, uploads the blob at end-of-visit to `POST /api/visits/:id/audio`, and Flask runs Whisper on it. (Stretch goal — not required for v1.)
+**Auth.** Currently using the raw API key from `NEXT_PUBLIC_DEEPGRAM_API_KEY`. The original spec planned to mint short-lived tokens server-side via `/v1/auth/grant`, but the Deepgram key we received returned 403 there (key scope issue). Acceptable trade-off for the hackathon; revisit before any deployment.
+
+**Audio.** `MediaRecorder` with `audio/webm` (opus), 100ms timeslice. Each `dataavailable` chunk is sent via `socket.sendMedia(blob)`. Send is wrapped in try/catch — `MediaRecorder` flushes a final chunk after `stop()`, which can land on a closed socket during cleanup.
+
+**Diarization handling.** On `is_final` messages, words are grouped by `speaker` into turns. Speakers are clamped via `Math.min(speaker, 1)` since we always have exactly 2 voices. The first final speaker number is stored as `doctorSpeaker`; everything else becomes "Patient." Interim messages don't include speaker tags, so they render flat.
+
+**StrictMode resilience.** The `/api/visits/start` call is in a click handler (not a useEffect) so React StrictMode's double-mount doesn't create two visit rows. The mic + WS setup *is* in a useEffect — its cleanup tears down both, so the second mount creates a fresh stream and socket.
 
 ---
 
-## 10. Diffing Logic
+## 10. Mocked clinical data
 
-`compute_diff(snapshot_json, current_json)` runs on the backend and:
-- Returns one entry per top-level field in the patient state schema where `snapshot_json[field] != current_json[field]` (deep equality).
-- For `jsonb` array fields (diagnoses, medications), also compute per-item adds/removes/changes by stable key (`name` for meds, `condition` for diagnoses) — return as `{ added: [...], removed: [...], changed: [{before, after}] }` so the UI can render granular badges.
-- For `recent_vitals`, treat it as a single object swap (just before/after).
-- Skip the diff entirely if `snapshot.snapshot_at >= current.updated_at` — nothing has changed.
+`client/lib/mockClinical.ts` generates plausible vitals trends (7 days × 5 metrics) and a fixed lab panel (A1C, Hgb, WBC, Creatinine, K+) **deterministically per patient**, seeded from `patient_id`.
+
+This is intentional — the LLM extractor populates `recent_vitals` (the latest values) but trends and labs would require real instrumentation we don't have. The mock generators give every patient a stable, clinical-looking dashboard from the moment they're admitted.
+
+**To make this real later:** vitals would need a time-series schema (append-only `{value, taken_at}` per metric), the extractor would need to *append* rather than overwrite, and labs would come from an actual integration.
 
 ---
 
-## 11. Seed / Demo Data
+## 11. Seed Data
 
-A `seed.py` script that:
-- Creates 3 doctors: `dr_patel`, `dr_chen`, `dr_okafor`.
-- Creates 2 patients with realistic but fictional state.
-- Creates 2 prior visits (one per doctor for the first patient) so the diff view has something to show on first demo open.
+Two doctors, inserted manually:
+
+```sql
+insert into doctors (username, name) values
+  ('doctor1', 'Dr. One'),
+  ('doctor2', 'Dr. Two')
+on conflict (username) do nothing;
+```
+
+No patients are seeded — we admit them through the UI. There's no `seed.py` script in v1.
 
 ---
 
 ## 12. Out of Scope (v1)
 
-- HIPAA / real PHI handling — **demo data only**, never use real patient information.
+- HIPAA / real PHI handling — **demo data only**, never real patient information.
 - Audit logs beyond the `visits` table.
 - Multi-org / multi-hospital tenancy.
 - Real-time push to other doctors viewing the patient (no live sockets between doctor sessions; refresh re-fetches).
-- Speaker diarization.
 - Editing or deleting past visits.
 - Mobile-native app.
 - Password-based auth, RBAC beyond "is a doctor."
+- Voice biometrics / speaker enrollment (we only do anonymous diarization + the first-speaker-is-doctor heuristic).
+- Real lab/imaging integrations (mocked — see §10).
+- Real time-series for vitals (mocked).
+- A doctor-review screen between LLM extraction and committing to `patient_state` (cut for hackathon — we auto-apply).
+- Visit history list on the patient page.
+- Any "alerts / sticky notes" catch-all bucket (considered, deferred).
 
 ---
 
-## 14. Open Questions (defer until the above is built)
+## 13. Open Questions
 
-- Should `recent_vitals` be one slot or a small history? (Currently one slot.)
-- Should the doctor be able to flag an LLM extraction as "wrong" so it doesn't get applied at all, vs. just edit it? (Currently edit-only.)
-- Do we want field-level "confidence" from the LLM and surface it in the review UI?
-- Should the patient itself ever be deletable / dischargeable? (Out of scope for v1.)
+- **Trends** — should we build a real time-series for vitals/labs and have the LLM append measurements? The clinical advisor explicitly called this out as the most-missed feature in real EMRs. It'd be the single biggest upgrade in v2.
+- **Per-section "last updated by Dr. X"** — cheap to add (we already store `updated_by_visit_id`) and pulls weight against the "click neurology, click nutrition" pain the advisor named. Worth a small UX pass.
+- **Auto-fill clinical documentation** — the advisor said "people are overburdened by documentation." Once we have transcripts + structured state, generating draft notes (admission notes, discharge summaries) from the same transcript is a natural extension.
+- **Chatbot over prior transcripts** — natural-language Q&A against the full visit history of a patient. Mentioned as a possible feature.
+- **Speaker labeling reliability** — the "first voice = doctor" heuristic will be wrong some of the time. The tap-to-swap mitigates it, but voice enrollment (see §12) is a real fix.
+- **Deepgram key minting** — switch to server-minted short-lived tokens before any non-local deployment.
+- **Photo storage at scale** — base64 in row works for hackathon; would migrate to Supabase Storage if patient counts grow.

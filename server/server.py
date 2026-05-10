@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime, timezone
 
@@ -32,27 +33,206 @@ def db_call(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
 
-def extract_long_term_goals(current_goals, transcript):
-    """Ask Claude to update long-term goals based on the visit transcript."""
+STATE_FIELDS = [
+    "synopsis",
+    "current_presentation",
+    "active_diagnoses",
+    "current_medications",
+    "treatment_plan",
+    "recent_vitals",
+    "physical_exam",
+    "past_medical_history",
+    "long_term_goals",
+]
+
+
+def state_subset(state):
+    """Pull just the structured medical fields out of a patient_state row."""
+    if not state:
+        return {
+            "synopsis": "",
+            "current_presentation": "",
+            "active_diagnoses": [],
+            "current_medications": [],
+            "treatment_plan": "",
+            "recent_vitals": None,
+            "physical_exam": "",
+            "past_medical_history": "",
+            "long_term_goals": "",
+        }
+    return {
+        "synopsis": state.get("synopsis") or "",
+        "current_presentation": state.get("current_presentation") or "",
+        "active_diagnoses": state.get("active_diagnoses") or [],
+        "current_medications": state.get("current_medications") or [],
+        "treatment_plan": state.get("treatment_plan") or "",
+        "recent_vitals": state.get("recent_vitals"),
+        "physical_exam": state.get("physical_exam") or "",
+        "past_medical_history": state.get("past_medical_history") or "",
+        "long_term_goals": state.get("long_term_goals") or "",
+    }
+
+
+UPDATE_PATIENT_STATE_TOOL = {
+    "name": "update_patient_state",
+    "description": (
+        "Return the patient's structured medical record updated based on the new "
+        "visit transcript. Carry forward unchanged fields verbatim. Do not invent "
+        "vitals, medications, diagnoses, or history that aren't mentioned."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "synopsis": {
+                "type": "string",
+                "description": (
+                    "One-sentence clinical synopsis in the standard format: "
+                    "'[age]yo [sex] with [key history], here for [chief complaint].' "
+                    "Update only if new key context emerges. Empty if not enough info yet."
+                ),
+            },
+            "current_presentation": {
+                "type": "string",
+                "description": (
+                    "The patient's subjective account of what they're experiencing this "
+                    "admission/visit — narrative form, what they said happened. "
+                    "Empty if nothing reported."
+                ),
+            },
+            "active_diagnoses": {
+                "type": "array",
+                "description": "Conditions currently being treated.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "condition": {"type": "string"},
+                        "since": {"type": "string", "description": "When first noted. Empty if unknown."},
+                        "notes": {"type": "string", "description": "Brief detail. Empty if none."},
+                    },
+                    "required": ["condition", "since", "notes"],
+                },
+            },
+            "current_medications": {
+                "type": "array",
+                "description": "Active prescriptions.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "dose": {"type": "string"},
+                        "frequency": {"type": "string"},
+                    },
+                    "required": ["name", "dose", "frequency"],
+                },
+            },
+            "treatment_plan": {
+                "type": "string",
+                "description": "Plan and next steps for this admission. Short paragraph. Empty if none.",
+            },
+            "recent_vitals": {
+                "type": ["object", "null"],
+                "description": "Most recent vitals mentioned. Null if none known.",
+                "properties": {
+                    "bp": {"type": "string"},
+                    "hr": {"type": "string"},
+                    "temp_c": {"type": "string"},
+                    "o2_sat": {"type": "string"},
+                    "taken_at": {"type": "string"},
+                },
+            },
+            "physical_exam": {
+                "type": "string",
+                "description": (
+                    "Brief narrative of physical exam findings (lung sounds, edema, etc.). "
+                    "Empty if no exam performed."
+                ),
+            },
+            "past_medical_history": {
+                "type": "string",
+                "description": (
+                    "Pre-existing chronic conditions, prior surgeries, family history. "
+                    "Brief narrative. Empty if none documented yet."
+                ),
+            },
+            "long_term_goals": {
+                "type": "string",
+                "description": "Forward-looking care goals. Empty if none set yet.",
+            },
+        },
+        "required": [
+            "synopsis",
+            "current_presentation",
+            "active_diagnoses",
+            "current_medications",
+            "treatment_plan",
+            "recent_vitals",
+            "physical_exam",
+            "past_medical_history",
+            "long_term_goals",
+        ],
+    },
+}
+
+
+def extract_patient_state(current_state, transcript):
+    """Run the unified extractor; returns the new state subset."""
+    base = state_subset(current_state)
     if not anthropic_client or not transcript.strip():
-        return current_goals or ""
+        return base
     response = anthropic_client.messages.create(
         model=LLM_MODEL,
-        max_tokens=500,
+        max_tokens=2000,
         system=(
-            "You are a clinical scribe. Update the patient's long-term goals based on a "
-            "new visit transcript. Carry the existing goals forward, modify them only if "
-            "the transcript clearly changes them, and append new goals if discussed. "
-            "Output a single concise paragraph (or an empty string if no goals are evident yet). "
-            "Output only the updated goals — no preamble, no markdown, no labels."
+            "You are a clinical scribe. Update the patient's structured medical record "
+            "based on a new visit transcript. Carry forward all unchanged fields verbatim. "
+            "Only modify fields the transcript clearly addresses. Do NOT invent vitals, "
+            "medications, diagnoses, or history that aren't explicitly mentioned. "
+            "If a field has no information yet and the transcript doesn't mention it, "
+            "use an empty string for strings, an empty array for lists, and null for objects. "
+            "Always return a complete record using the update_patient_state tool."
+        ),
+        tools=[UPDATE_PATIENT_STATE_TOOL],
+        tool_choice={"type": "tool", "name": "update_patient_state"},
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"CURRENT_STATE:\n{json.dumps(base, indent=2)}\n\n"
+                    f"TRANSCRIPT:\n{transcript}"
+                ),
+            }
+        ],
+    )
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "update_patient_state":
+            return block.input
+    return base
+
+
+def narrate_diff(snapshot, current_state):
+    """Ask Claude to narrate what's changed between a doctor's snapshot and current state."""
+    if not anthropic_client:
+        return ""
+    snap = state_subset(snapshot)
+    cur = state_subset(current_state)
+    if snap == cur:
+        return ""
+    response = anthropic_client.messages.create(
+        model=LLM_MODEL,
+        max_tokens=400,
+        system=(
+            "You write short clinical handoff notes. Given a doctor's prior view of "
+            "a patient and the current state, write 2-4 plain sentences describing "
+            "what has changed since they last saw the patient. Speak directly to the "
+            "doctor in second person. If nothing meaningful has changed, return an "
+            "empty string. No preamble, no markdown, no labels — just the prose."
         ),
         messages=[
             {
                 "role": "user",
                 "content": (
-                    f"CURRENT_GOALS:\n{current_goals or '(none yet)'}\n\n"
-                    f"TRANSCRIPT:\n{transcript}\n\n"
-                    "Return only the updated goals as plain text."
+                    f"YOUR_LAST_VIEW:\n{json.dumps(snap, indent=2)}\n\n"
+                    f"CURRENT_STATE:\n{json.dumps(cur, indent=2)}"
                 ),
             }
         ],
@@ -157,14 +337,17 @@ def delete_patient(patient_id):
 
 @app.route("/api/patients/<patient_id>", methods=["GET"])
 def get_patient(patient_id):
-    _, err = require_doctor()
+    doctor, err = require_doctor()
     if err:
         return err
+
     p_result = db_call(
         supabase.table("patients").select("*").eq("id", patient_id).limit(1).execute
     )
     if not p_result.data:
         return jsonify({"error": "not found"}), 404
+    patient = p_result.data[0]
+
     s_result = db_call(
         supabase.table("patient_state")
         .select("*")
@@ -172,9 +355,34 @@ def get_patient(patient_id):
         .limit(1)
         .execute
     )
+    current_state = s_result.data[0] if s_result.data else None
+
+    snap_result = db_call(
+        supabase.table("doctor_patient_snapshots")
+        .select("*")
+        .eq("doctor_id", doctor["id"])
+        .eq("patient_id", patient_id)
+        .limit(1)
+        .execute
+    )
+    viewer_snapshot = snap_result.data[0] if snap_result.data else None
+
+    is_first_view = viewer_snapshot is None
+    narrative = None
+    if not is_first_view and current_state:
+        snap_at = viewer_snapshot.get("snapshot_at")
+        cur_at = current_state.get("updated_at")
+        if snap_at and cur_at and snap_at < cur_at:
+            narrative = narrate_diff(
+                viewer_snapshot.get("snapshot") or {}, current_state
+            )
+
     return jsonify({
-        "patient": p_result.data[0],
-        "current_state": s_result.data[0] if s_result.data else None,
+        "patient": patient,
+        "current_state": current_state,
+        "viewer_snapshot": viewer_snapshot,
+        "narrative": narrative,
+        "is_first_view": is_first_view,
     })
 
 
@@ -206,7 +414,7 @@ def start_visit():
 
 @app.route("/api/visits/<visit_id>/finalize", methods=["POST"])
 def finalize_visit(visit_id):
-    _, err = require_doctor()
+    doctor, err = require_doctor()
     if err:
         return err
     body = request.get_json(silent=True) or {}
@@ -237,25 +445,35 @@ def finalize_visit(visit_id):
 
     state_row = db_call(
         supabase.table("patient_state")
-        .select("long_term_goals")
+        .select("*")
         .eq("patient_id", patient_id)
         .limit(1)
         .execute
     )
-    current_goals = (
-        state_row.data[0].get("long_term_goals") if state_row.data else ""
-    ) or ""
+    current_state = state_row.data[0] if state_row.data else {}
 
-    new_goals = extract_long_term_goals(current_goals, transcript)
+    new_state = extract_patient_state(current_state, transcript)
 
     db_call(
         supabase.table("patient_state")
         .update({
-            "long_term_goals": new_goals,
+            **new_state,
             "updated_at": now_iso,
             "updated_by_visit_id": visit_id,
         })
         .eq("patient_id", patient_id)
+        .execute
+    )
+
+    db_call(
+        supabase.table("doctor_patient_snapshots")
+        .upsert({
+            "doctor_id": doctor["id"],
+            "patient_id": patient_id,
+            "snapshot": new_state,
+            "snapshot_at": now_iso,
+            "last_visit_id": visit_id,
+        })
         .execute
     )
 

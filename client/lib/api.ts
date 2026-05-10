@@ -18,15 +18,52 @@ export type Patient = {
   admitted_at: string;
 };
 
+export type Diagnosis = {
+  condition: string;
+  since: string;
+  notes: string;
+};
+
+export type Medication = {
+  name: string;
+  dose: string;
+  frequency: string;
+};
+
+export type Vitals = {
+  bp: string;
+  hr: string;
+  temp_c: string;
+  o2_sat: string;
+  taken_at: string;
+};
+
 export type PatientState = {
   patient_id: string;
+  synopsis: string | null;
+  current_presentation: string | null;
+  active_diagnoses: Diagnosis[];
+  current_medications: Medication[];
+  treatment_plan: string | null;
+  recent_vitals: Vitals | null;
+  physical_exam: string | null;
+  past_medical_history: string | null;
   long_term_goals: string | null;
   updated_at: string;
+};
+
+export type ViewerSnapshot = {
+  doctor_id: string;
+  patient_id: string;
+  snapshot_at: string;
 };
 
 export type GetPatientResponse = {
   patient: Patient;
   current_state: PatientState | null;
+  viewer_snapshot: ViewerSnapshot | null;
+  narrative: string | null;
+  is_first_view: boolean;
 };
 
 export function getStoredDoctor(): Doctor | null {

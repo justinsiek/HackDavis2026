@@ -17,6 +17,17 @@ export type Patient = {
   admitted_at: string;
 };
 
+export type PatientState = {
+  patient_id: string;
+  long_term_goals: string | null;
+  updated_at: string;
+};
+
+export type GetPatientResponse = {
+  patient: Patient;
+  current_state: PatientState | null;
+};
+
 export function getStoredDoctor(): Doctor | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(STORAGE_KEY);

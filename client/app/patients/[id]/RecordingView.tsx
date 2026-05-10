@@ -18,11 +18,78 @@ type DGSocket = Awaited<
   ReturnType<DeepgramClient["listen"]["v1"]["connect"]>
 >;
 
+type Word = {
+  word: string;
+  punctuated_word?: string;
+  speaker?: number;
+};
+
+type Turn = {
+  speaker: number;
+  text: string;
+};
+
+const SPEAKER_STYLES: { label: string; bubble: string }[] = [
+  { label: "text-blue-700", bubble: "bg-blue-50 ring-blue-100" },
+  { label: "text-emerald-700", bubble: "bg-emerald-50 ring-emerald-100" },
+  { label: "text-violet-700", bubble: "bg-violet-50 ring-violet-100" },
+  { label: "text-amber-700", bubble: "bg-amber-50 ring-amber-100" },
+];
+
+function speakerStyle(speaker: number, doctorSpeaker: number | null) {
+  // If we know who the doctor is, lock styles: doctor → first style, patient → second.
+  if (doctorSpeaker !== null) {
+    return speaker === doctorSpeaker ? SPEAKER_STYLES[0] : SPEAKER_STYLES[1];
+  }
+  return SPEAKER_STYLES[speaker % SPEAKER_STYLES.length];
+}
+
+function speakerLabel(speaker: number, doctorSpeaker: number | null): string {
+  if (doctorSpeaker === null) return `Speaker ${speaker}`;
+  return speaker === doctorSpeaker ? "Doctor" : "Patient";
+}
+
+function wordsToTurns(words: Word[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const w of words) {
+    // Only ever 2 speakers in a doctor-patient session — clamp any stray
+    // extra speakers Deepgram occasionally hallucinates back to speaker 1.
+    const speaker = Math.min(w.speaker ?? 0, 1);
+    const text = w.punctuated_word ?? w.word;
+    if (!text) continue;
+    const last = turns[turns.length - 1];
+    if (last && last.speaker === speaker) {
+      last.text += " " + text;
+    } else {
+      turns.push({ speaker, text });
+    }
+  }
+  return turns;
+}
+
+function appendTurns(prev: Turn[], incoming: Turn[]): Turn[] {
+  if (incoming.length === 0) return prev;
+  const result = prev.slice();
+  for (const t of incoming) {
+    const last = result[result.length - 1];
+    if (last && last.speaker === t.speaker) {
+      result[result.length - 1] = {
+        speaker: last.speaker,
+        text: last.text + " " + t.text,
+      };
+    } else {
+      result.push(t);
+    }
+  }
+  return result;
+}
+
 export default function RecordingView({ patient, visitId, onDone }: Props) {
   const [status, setStatus] = useState<Status>("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [finals, setFinals] = useState<string[]>([]);
-  const [interim, setInterim] = useState("");
+  const [finalTurns, setFinalTurns] = useState<Turn[]>([]);
+  const [interimText, setInterimText] = useState("");
+  const [doctorSpeaker, setDoctorSpeaker] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
 
   const dgRef = useRef<DGSocket | null>(null);
@@ -31,7 +98,7 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
   const accumulatedMsRef = useRef(0);
   const segmentStartRef = useRef<number | null>(null);
 
-  // Boot: create visit, mint Deepgram token, open mic + WS, start recording.
+  // Boot: open mic + Deepgram WS, start recording.
   useEffect(() => {
     let cancelled = false;
 
@@ -56,6 +123,9 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
           language: "en-US",
           smart_format: "true",
           interim_results: "true",
+          endpointing: "300",
+          vad_events: "true",
+          diarize: "true",
           Authorization: `Token ${DEEPGRAM_API_KEY}`,
         });
         if (cancelled) return;
@@ -77,7 +147,7 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
               // Socket closed (e.g., StrictMode cleanup or visit ended) — drop chunk.
             }
           };
-          recorder.start(250);
+          recorder.start(100);
           mediaRecorderRef.current = recorder;
           segmentStartRef.current = Date.now();
           setStatus("recording");
@@ -85,13 +155,18 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
 
         socket.on("message", (msg) => {
           if (msg.type !== "Results") return;
-          const text = msg.channel.alternatives[0]?.transcript ?? "";
-          if (!text) return;
+          const alt = msg.channel.alternatives[0];
+          if (!alt) return;
           if (msg.is_final) {
-            setFinals((prev) => [...prev, text]);
-            setInterim("");
+            const words = (alt.words ?? []) as Word[];
+            const turns = wordsToTurns(words);
+            if (turns.length === 0) return;
+            setDoctorSpeaker((curr) => curr ?? turns[0].speaker);
+            setFinalTurns((prev) => appendTurns(prev, turns));
+            setInterimText("");
           } else {
-            setInterim(text);
+            // Interim results don't carry reliable speaker tags — render flat.
+            setInterimText(alt.transcript ?? "");
           }
         });
 
@@ -178,11 +253,16 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
   async function handleDone() {
     setStatus("saving");
     cleanup();
-    const finalText = [...finals, interim].filter(Boolean).join(" ").trim();
+    const transcriptParts = finalTurns.map(
+      (t) => `${speakerLabel(t.speaker, doctorSpeaker)}: ${t.text}`
+    );
+    const tail = interimText.trim();
+    if (tail) transcriptParts.push(tail);
+    const transcript = transcriptParts.join("\n");
     try {
       await api(`/api/visits/${visitId}/finalize`, {
         method: "POST",
-        body: JSON.stringify({ transcript: finalText }),
+        body: JSON.stringify({ transcript }),
       });
       onDone();
     } catch (err) {
@@ -193,7 +273,7 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
     }
   }
 
-  const transcriptText = finals.join(" ");
+  const hasAnyText = finalTurns.length > 0 || interimText.length > 0;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -216,11 +296,33 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
         <div className="min-h-[300px] rounded-xl bg-white p-6 shadow-sm ring-1 ring-zinc-200">
-          {transcriptText || interim ? (
-            <p className="text-base leading-7 text-zinc-900">
-              {transcriptText}
-              {interim && <span className="text-zinc-400"> {interim}</span>}
-            </p>
+          {hasAnyText ? (
+            <div className="space-y-3">
+              {doctorSpeaker !== null && (
+                <div className="flex justify-end">
+                  <button
+                    onClick={() =>
+                      setDoctorSpeaker((curr) => (curr === null ? null : 1 - curr))
+                    }
+                    className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-700 hover:underline"
+                  >
+                    Swap doctor / patient
+                  </button>
+                </div>
+              )}
+              {finalTurns.map((turn, i) => (
+                <TurnLine
+                  key={`f-${i}`}
+                  turn={turn}
+                  doctorSpeaker={doctorSpeaker}
+                />
+              ))}
+              {interimText && (
+                <p className="px-3 text-base italic leading-7 text-zinc-400">
+                  {interimText}
+                </p>
+              )}
+            </div>
           ) : (
             <p className="text-sm italic text-zinc-400">
               {status === "connecting" ? "Connecting…" : "Start speaking…"}
@@ -260,6 +362,29 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+function TurnLine({
+  turn,
+  doctorSpeaker,
+}: {
+  turn: Turn;
+  doctorSpeaker: number | null;
+}) {
+  const style = speakerStyle(turn.speaker, doctorSpeaker);
+  const label = speakerLabel(turn.speaker, doctorSpeaker);
+  return (
+    <div className={`rounded-lg px-3 py-2 ring-1 ring-inset ${style.bubble}`}>
+      <div
+        className={`text-xs font-semibold uppercase tracking-wide ${style.label}`}
+      >
+        {label}
+      </div>
+      <div className="mt-0.5 text-base leading-7 text-zinc-900">
+        {turn.text}
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, ApiError, Patient } from "@/lib/api";
+import { api, ApiError, GetPatientResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import RecordingView from "./RecordingView";
 
@@ -13,7 +13,7 @@ export default function PatientDetailPage({ params }: Props) {
   const { id } = use(params);
   const router = useRouter();
   const { doctor, isLoading: authLoading, setDoctor } = useAuth();
-  const [patient, setPatient] = useState<Patient | null>(null);
+  const [data, setData] = useState<GetPatientResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null);
@@ -28,8 +28,8 @@ export default function PatientDetailPage({ params }: Props) {
     setError(null);
     setIsLoading(true);
     try {
-      const { patient } = await api<{ patient: Patient }>(`/api/patients/${id}`);
-      setPatient(patient);
+      const result = await api<GetPatientResponse>(`/api/patients/${id}`);
+      setData(result);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setDoctor(null);
@@ -70,15 +70,21 @@ export default function PatientDetailPage({ params }: Props) {
 
   if (authLoading || !doctor) return null;
 
-  if (activeVisitId && patient) {
+  if (activeVisitId && data?.patient) {
     return (
       <RecordingView
-        patient={patient}
+        patient={data.patient}
         visitId={activeVisitId}
-        onDone={() => setActiveVisitId(null)}
+        onDone={() => {
+          setActiveVisitId(null);
+          loadPatient();
+        }}
       />
     );
   }
+
+  const patient = data?.patient;
+  const goals = data?.current_state?.long_term_goals ?? "";
 
   return (
     <div className="flex flex-1 flex-col">
@@ -114,6 +120,23 @@ export default function PatientDetailPage({ params }: Props) {
               {patient.sex && ` · ${patient.sex}`}
               {patient.height_cm && ` · ${formatHeight(patient.height_cm)}`}
             </p>
+
+            <section className="mt-8">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Long-term goals
+              </h2>
+              <div className="mt-2 rounded-xl bg-white p-5 shadow-sm ring-1 ring-zinc-200">
+                {goals ? (
+                  <p className="whitespace-pre-wrap text-base leading-7 text-zinc-900">
+                    {goals}
+                  </p>
+                ) : (
+                  <p className="text-sm italic text-zinc-500">
+                    No long-term goals recorded yet.
+                  </p>
+                )}
+              </div>
+            </section>
 
             <div className="mt-10">
               <button

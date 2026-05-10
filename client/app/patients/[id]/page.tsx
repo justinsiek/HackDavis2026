@@ -351,7 +351,7 @@ export default function PatientDetailPage({ params }: Props) {
         className="rounded-lg border px-3 py-1.5 text-[13px] font-bold transition-colors hover:bg-slate-50 disabled:opacity-50"
         style={{ borderColor: "var(--border-strong)", color: "var(--text-1)" }}
       >
-        {isChatOpen ? "Close AI" : "Ask AI"}
+        {isChatOpen ? "Close chat" : "Ask Clair"}
       </button>
       <button
         onClick={() => requestNavigation(startRecording)}
@@ -669,7 +669,7 @@ function ChatSidebar({
       >
         <div className="min-w-0">
           <div className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-1)" }}>
-            Ask AI
+            Ask Clair
           </div>
           <div className="truncate font-bold" style={{ color: "var(--text-1)" }}>
             {patientName || "Patient"}
@@ -911,11 +911,9 @@ function Bento({
           historyAction={history("synopsis")}
         />
       </div>
-      {!data.is_first_view && (
-        <div className="lg:col-span-6">
-          <ChangedCard narrative={data.narrative} />
-        </div>
-      )}
+      <div className="lg:col-span-6">
+        <ChangedCard narrative={data.narrative} isFirstView={data.is_first_view} />
+      </div>
 
       {/* Row 2: active problems · subjective · long-term goals — 33/33/33 */}
       <div className="lg:col-span-4">
@@ -952,8 +950,8 @@ function Bento({
         />
       </div>
 
-      {/* Row 3: medications · vitals · labs · documents */}
-      <div className="lg:col-span-2">
+      {/* Row 3: medications · vitals · labs · documents — 25/25/25/25 */}
+      <div className="lg:col-span-3">
         <MedicationsCard
           medications={state?.current_medications ?? []}
           editing={isEditing}
@@ -990,7 +988,7 @@ function Bento({
           historyAction={history("recent_vitals")}
         />
       </div>
-      <div className="lg:col-span-4">
+      <div className="lg:col-span-3">
         <LabsCard labs={labs} />
       </div>
       <div className="lg:col-span-3">
@@ -1310,7 +1308,13 @@ function formatSex(sex: string): string {
   return sex;
 }
 
-function ChangedCard({ narrative }: { narrative: string | null }) {
+function ChangedCard({
+  narrative,
+  isFirstView,
+}: {
+  narrative: string | null;
+  isFirstView?: boolean;
+}) {
   // Parse the bulleted delta list. Each non-empty line is a single change.
   const items: string[] = (narrative ?? "")
     .split("\n")
@@ -1341,7 +1345,9 @@ function ChangedCard({ narrative }: { narrative: string | null }) {
 
       {items.length === 0 ? (
         <p className="text-sm italic" style={{ color: "#92400E" }}>
-          Nothing new since your last visit.
+          {isFirstView
+            ? "First time viewing this patient — no prior baseline to compare against."
+            : "Nothing new since your last visit."}
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5">

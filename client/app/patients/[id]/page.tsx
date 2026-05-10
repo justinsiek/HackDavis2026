@@ -1054,7 +1054,7 @@ function CardHeader({
 }) {
   return (
     <div className={`mb-2 flex items-center justify-between gap-2 ${className}`}>
-      <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-1)" }}>
+      <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-1)", fontFamily: "PPNeueMontreal", fontWeight: 700 }}>
         {title}
       </h2>
       {action}
@@ -1104,7 +1104,7 @@ function HistoryButton({
       className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-bold transition-colors hover:bg-slate-100"
       style={{
         border: count > 0 ? "1px solid rgba(71,128,255,0.35)" : "1px solid var(--border-strong)",
-        color: count > 0 ? "var(--accent)" : "var(--text-3)",
+        color: count > 0 ? "var(--accent)" : "var(--text-1)",
       }}
     >
       <svg
@@ -1326,7 +1326,7 @@ function ChangedCard({
   fieldDiffs: FieldDiff[];
   isFirstView?: boolean;
 }) {
-  const summary = (narrative ?? "").trim();
+  const summary = (narrative ?? "").trim().replace(/ — /g, ", ").replace(/—/g, "");
   const totalChanges = fieldDiffs.reduce((acc, d) => acc + countChangesInDiff(d), 0);
   const [openField, setOpenField] = useState<string | null>(null);
 
@@ -1338,7 +1338,7 @@ function ChangedCard({
       <div className="mb-3 flex items-center justify-between">
         <h2
           className="text-xs font-bold uppercase tracking-wider"
-          style={{ color: "#0F172A" }}
+          style={{ color: "#0F172A", fontFamily: "PPNeueMontreal", fontWeight: 700 }}
         >
           What&rsquo;s changed since you last saw this patient
         </h2>
@@ -1413,8 +1413,8 @@ function FieldDiffAccordion({
       >
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className="text-[11px] font-bold uppercase tracking-wider"
-            style={{ color: "#92400E" }}
+            className="text-[11px] uppercase tracking-wider"
+            style={{ color: "#92400E", fontFamily: "PPNeueMontreal", fontWeight: 600 }}
           >
             {diff.label}
           </span>
@@ -2527,7 +2527,7 @@ function VisitHistoryCard({ visits }: { visits: Visit[] }) {
       >
         <h2
           className="text-xs font-bold uppercase tracking-wider"
-          style={{ color: "var(--text-3)" }}
+          style={{ color: "var(--text-3)", fontFamily: "PPNeueMontreal", fontWeight: 700 }}
         >
           Visit history · {visits.length}
         </h2>

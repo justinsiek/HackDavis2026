@@ -897,9 +897,9 @@ function Bento({
   );
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-12 items-start auto-rows-min">
-      {/* Row 1: header (left) + what's-changed (right) */}
-      <div className="lg:col-span-8">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+      {/* Row 1: header (left) + what's-changed (right) — 50/50 */}
+      <div className="lg:col-span-6">
         <PatientHeaderCard
           patient={patient}
           synopsis={state?.synopsis ?? ""}
@@ -909,13 +909,13 @@ function Bento({
         />
       </div>
       {!data.is_first_view && (
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-6">
           <ChangedCard narrative={data.narrative} />
         </div>
       )}
 
-      {/* Row 2: active problems · subjective · long-term goals */}
-      <div className="lg:col-span-3">
+      {/* Row 2: active problems · subjective · long-term goals — 33/33/33 */}
+      <div className="lg:col-span-4">
         <ProblemsCard
           diagnoses={state?.active_diagnoses ?? []}
           editing={isEditing}
@@ -928,7 +928,7 @@ function Bento({
           historyAction={history("active_diagnoses")}
         />
       </div>
-      <div className="lg:col-span-6">
+      <div className="lg:col-span-4">
         <TextCard
           title="Subjective"
           content={state?.current_presentation ?? ""}
@@ -938,7 +938,7 @@ function Bento({
           headerAction={history("current_presentation")}
         />
       </div>
-      <div className="lg:col-span-3">
+      <div className="lg:col-span-4">
         <TextCard
           title="Long-term goals"
           content={state?.long_term_goals ?? ""}
@@ -998,11 +998,8 @@ function Bento({
         />
       </div>
 
-      {/* Row 4: visit history + plan & next steps */}
-      <div className="lg:col-span-6">
-        <VisitHistoryCard visits={data.visits} />
-      </div>
-      <div className="lg:col-span-6">
+      {/* Row 4: plan & next steps (full width) */}
+      <div className="lg:col-span-12">
         <TextCard
           title="Plan & next steps"
           content={state?.treatment_plan ?? ""}
@@ -1011,6 +1008,11 @@ function Bento({
           onChange={(v) => onTextFieldChange("treatment_plan", v)}
           headerAction={history("treatment_plan")}
         />
+      </div>
+
+      {/* Row 5: visit history (full width) */}
+      <div className="lg:col-span-12">
+        <VisitHistoryCard visits={data.visits} />
       </div>
     </div>
   );
@@ -2056,20 +2058,52 @@ function LabsCard({ labs }: { labs: Lab[] }) {
 // ---------------------------------------------------------------------------
 
 function VisitHistoryCard({ visits }: { visits: Visit[] }) {
+  const [expanded, setExpanded] = useState(true);
   return (
     <BentoCard>
-      <CardHeader title={`Visit history · ${visits.length}`} />
-      {visits.length === 0 ? (
-        <Empty>No prior visits recorded.</Empty>
-      ) : (
-        <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
-          {visits.map((v) => (
-            <li key={v.id} className="py-3 first:pt-0 last:pb-0">
-              <VisitRowInline visit={v} />
-            </li>
-          ))}
-        </ul>
-      )}
+      <button
+        type="button"
+        onClick={() => setExpanded((o) => !o)}
+        aria-expanded={expanded}
+        className={`flex w-full items-center justify-between gap-2 ${
+          expanded ? "mb-2" : ""
+        }`}
+      >
+        <h2
+          className="text-xs font-bold uppercase tracking-wider"
+          style={{ color: "var(--text-3)" }}
+        >
+          Visit history · {visits.length}
+        </h2>
+        <span
+          aria-hidden="true"
+          className="text-xs transition-transform"
+          style={{
+            color: "var(--text-3)",
+            transform: expanded ? "rotate(180deg)" : "none",
+          }}
+        >
+          ▾
+        </span>
+      </button>
+      {expanded &&
+        (visits.length === 0 ? (
+          <Empty>No prior visits recorded.</Empty>
+        ) : (
+          <ul className="grid grid-cols-1 lg:grid-cols-2 gap-x-8">
+            {visits.map((v, i) => (
+              <li
+                key={v.id}
+                className={`py-3 ${
+                  i < 2 ? "lg:border-t-0" : "lg:border-t"
+                } ${i === 0 ? "border-t-0" : "border-t"}`}
+                style={{ borderColor: "var(--border)" }}
+              >
+                <VisitRowInline visit={v} />
+              </li>
+            ))}
+          </ul>
+        ))}
     </BentoCard>
   );
 }

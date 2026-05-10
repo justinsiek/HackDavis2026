@@ -18,7 +18,10 @@ function initials(name: string): string {
 
 export default function TopBar({ doctorName, onLogout, leftAction, rightActions }: Props) {
   return (
-    <header className="sticky top-0 z-10 flex items-center justify-between px-8 py-1 gap-4 bg-white">
+    <header
+      className="sticky top-0 z-10 flex items-center justify-between px-8 py-1 gap-4 bg-white"
+      style={{ borderBottom: "1px solid var(--border)" }}
+    >
       {/* Left: brand + optional page-specific left action */}
       <div className="flex items-center gap-5 min-w-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}

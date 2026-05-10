@@ -897,9 +897,9 @@ function Bento({
   );
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-      {/* Row 1: header + medications + long-term goals */}
-      <div className="lg:col-span-6">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-12 items-start auto-rows-min">
+      {/* Row 1: header (left) + what's-changed (right) */}
+      <div className="lg:col-span-8">
         <PatientHeaderCard
           patient={patient}
           synopsis={state?.synopsis ?? ""}
@@ -908,39 +908,14 @@ function Bento({
           historyAction={history("synopsis")}
         />
       </div>
-      <div className="lg:col-span-3">
-        <MedicationsCard
-          medications={state?.current_medications ?? []}
-          editing={isEditing}
-          onOpenEditor={() =>
-            onOpenEditor({
-              kind: "medications",
-              initial: state?.current_medications ?? [],
-            })
-          }
-          historyAction={history("current_medications")}
-        />
-      </div>
-      <div className="lg:col-span-3">
-        <TextCard
-          title="Long-term goals"
-          content={state?.long_term_goals ?? ""}
-          emptyText="No long-term goals set."
-          editing={isEditing}
-          onChange={(v) => onTextFieldChange("long_term_goals", v)}
-          headerAction={history("long_term_goals")}
-        />
-      </div>
-
-      {/* Row 2: what's-changed (only after the first visit) */}
       {!data.is_first_view && (
-        <div className="lg:col-span-12">
+        <div className="lg:col-span-4">
           <ChangedCard narrative={data.narrative} />
         </div>
       )}
 
-      {/* Row 3: problems / subjective */}
-      <div className="lg:col-span-6">
+      {/* Row 2: active problems · subjective · long-term goals */}
+      <div className="lg:col-span-3">
         <ProblemsCard
           diagnoses={state?.active_diagnoses ?? []}
           editing={isEditing}
@@ -963,9 +938,32 @@ function Bento({
           headerAction={history("current_presentation")}
         />
       </div>
+      <div className="lg:col-span-3">
+        <TextCard
+          title="Long-term goals"
+          content={state?.long_term_goals ?? ""}
+          emptyText="No long-term goals set."
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("long_term_goals", v)}
+          headerAction={history("long_term_goals")}
+        />
+      </div>
 
-      {/* Row 4: vitals + labs + past medical documents */}
-      <div className="lg:col-span-4">
+      {/* Row 3: medications · vitals · labs · documents */}
+      <div className="lg:col-span-2">
+        <MedicationsCard
+          medications={state?.current_medications ?? []}
+          editing={isEditing}
+          onOpenEditor={() =>
+            onOpenEditor({
+              kind: "medications",
+              initial: state?.current_medications ?? [],
+            })
+          }
+          historyAction={history("current_medications")}
+        />
+      </div>
+      <div className="lg:col-span-3">
         <VitalsCard
           vitals={state?.recent_vitals ?? null}
           series={vitalsSeries}
@@ -992,7 +990,7 @@ function Bento({
       <div className="lg:col-span-4">
         <LabsCard labs={labs} />
       </div>
-      <div className="lg:col-span-4">
+      <div className="lg:col-span-3">
         <DocumentsCard
           patientId={patient.id}
           documents={data.documents}
@@ -1000,7 +998,7 @@ function Bento({
         />
       </div>
 
-      {/* Row 5: visit history + plan & next steps */}
+      {/* Row 4: visit history + plan & next steps */}
       <div className="lg:col-span-6">
         <VisitHistoryCard visits={data.visits} />
       </div>
@@ -1149,37 +1147,37 @@ function PatientHeaderCard({
   );
   return (
     <section
-      className="flex h-full flex-col rounded-xl p-5"
+      className="flex h-full flex-col rounded-xl p-6"
       style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
     >
       {/* Identity row */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-start gap-5">
         {patient.photo_data ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={patient.photo_data}
             alt={patient.name}
-            className="h-16 w-16 shrink-0 rounded-full object-cover"
+            className="h-24 w-24 shrink-0 rounded-2xl object-cover"
             style={{ border: "1px solid var(--border)" }}
           />
         ) : (
           <div
-            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-lg font-bold"
+            className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl text-2xl font-medium"
             style={{ background: "var(--accent-light)", color: "var(--text-1)" }}
           >
             {initials(patient.name)}
           </div>
         )}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pt-1">
           <h1
-            className="text-2xl font-bold tracking-tight capitalize leading-tight truncate"
+            className="text-3xl font-medium tracking-tight capitalize leading-tight truncate"
             style={{ color: "var(--text-1)" }}
           >
             {patient.name}
           </h1>
           <p
-            className="mt-1 text-[13px]"
-            style={{ color: "var(--text-1)" }}
+            className="mt-1.5 text-sm"
+            style={{ color: "var(--text-2)" }}
           >
             {meta.join("  ·  ")}
           </p>
@@ -1187,33 +1185,38 @@ function PatientHeaderCard({
         {historyAction && <div className="self-start">{historyAction}</div>}
       </div>
 
-      {/* Synopsis — full width below */}
-      <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--border)" }}>
-        <div
-          className="mb-1.5 text-[10px] font-bold uppercase tracking-wider"
-          style={{ color: "var(--text-1)" }}
-        >
-          Synopsis
-        </div>
+      {/* Synopsis — hero treatment */}
+      <div className="mt-5">
         {editing ? (
-          <textarea
-            value={synopsis}
-            onChange={(e) => onSynopsisChange(e.target.value || null)}
-            placeholder="Clinical one-liner"
-            rows={3}
-            className="w-full resize-y rounded-lg px-3 py-2 text-[15px] leading-7 outline-none"
-            style={{
-              border: "1px solid var(--border-strong)",
-              color: "var(--text-1)",
-              background: "var(--bg)",
-            }}
-          />
+          <>
+            <div
+              className="mb-1.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{ color: "var(--text-3)" }}
+            >
+              Synopsis
+            </div>
+            <textarea
+              value={synopsis}
+              onChange={(e) => onSynopsisChange(e.target.value || null)}
+              placeholder="Clinical one-liner"
+              rows={3}
+              className="w-full resize-y rounded-lg px-3 py-2 text-lg leading-7 outline-none"
+              style={{
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-1)",
+                background: "var(--bg)",
+              }}
+            />
+          </>
         ) : synopsis ? (
-          <p className="text-[15px] leading-7" style={{ color: "var(--text-1)" }}>
+          <p
+            className="text-xl leading-snug font-medium"
+            style={{ color: "var(--text-1)" }}
+          >
             {synopsis}
           </p>
         ) : (
-          <p className="text-sm italic" style={{ color: "var(--text-1)" }}>
+          <p className="text-sm italic" style={{ color: "var(--text-3)" }}>
             Synopsis will appear here after the first visit.
           </p>
         )}
@@ -1306,22 +1309,57 @@ function formatSex(sex: string): string {
 }
 
 function ChangedCard({ narrative }: { narrative: string | null }) {
+  // Parse the bulleted delta list. Each non-empty line is a single change.
+  const items: string[] = (narrative ?? "")
+    .split("\n")
+    .map((l) => l.replace(/^[\s•\-*]+/, "").trim())
+    .filter((l) => l.length > 0);
+
   return (
     <section
       className="flex h-full flex-col rounded-xl p-5"
       style={{ background: "#FFFBEB", border: "1px solid #FDE68A" }}
     >
-      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: "#0F172A" }}>
-        What&rsquo;s changed since you last saw this patient
-      </h2>
-      {narrative ? (
-        <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: "#0F172A" }}>
-          {narrative}
-        </p>
-      ) : (
-        <p className="text-sm italic" style={{ color: "#0F172A" }}>
+      <div className="mb-3 flex items-center justify-between">
+        <h2
+          className="text-xs font-bold uppercase tracking-wider"
+          style={{ color: "#0F172A" }}
+        >
+          What&rsquo;s changed since you last saw this patient
+        </h2>
+        {items.length > 0 && (
+          <span
+            className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-medium"
+            style={{ background: "#FDE68A", color: "#78350F" }}
+          >
+            {items.length}
+          </span>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm italic" style={{ color: "#92400E" }}>
           Nothing new since your last visit.
         </p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {items.map((item, i) => (
+            <li
+              key={i}
+              className="flex items-start gap-2.5 rounded-md px-2.5 py-1.5"
+              style={{ background: "rgba(255, 255, 255, 0.55)" }}
+            >
+              <span
+                className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ background: "#D97706" }}
+                aria-hidden="true"
+              />
+              <span className="text-sm leading-6" style={{ color: "#0F172A" }}>
+                {item}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );
@@ -2020,13 +2058,15 @@ function LabsCard({ labs }: { labs: Lab[] }) {
 function VisitHistoryCard({ visits }: { visits: Visit[] }) {
   return (
     <BentoCard>
-      <CardHeader title="Visit history" />
+      <CardHeader title={`Visit history · ${visits.length}`} />
       {visits.length === 0 ? (
         <Empty>No prior visits recorded.</Empty>
       ) : (
         <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
           {visits.map((v) => (
-            <VisitRow key={v.id} visit={v} />
+            <li key={v.id} className="py-3 first:pt-0 last:pb-0">
+              <VisitRowInline visit={v} />
+            </li>
           ))}
         </ul>
       )}
@@ -2034,43 +2074,48 @@ function VisitHistoryCard({ visits }: { visits: Visit[] }) {
   );
 }
 
-function VisitRow({ visit }: { visit: Visit }) {
-  const [expanded, setExpanded] = useState(false);
+function VisitRowInline({ visit }: { visit: Visit }) {
   const date = new Date(visit.started_at).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
-
   return (
-    <li className="py-2 first:pt-0 last:pb-0">
-      <button
-        type="button"
-        onClick={() => setExpanded((o) => !o)}
-        className="flex w-full items-baseline justify-between gap-3 text-left"
-      >
-        <span className="truncate font-bold" style={{ color: "var(--text-1)" }}>
+    <>
+      <div className="flex items-baseline justify-between gap-3">
+        <span
+          className="truncate text-sm font-medium"
+          style={{ color: "var(--text-1)" }}
+        >
           {visit.doctor_name}
         </span>
-        <span className="flex shrink-0 items-center gap-2 text-xs" style={{ color: "var(--text-1)" }}>
+        <span className="shrink-0 text-xs" style={{ color: "var(--text-3)" }}>
           {date}
-          <span className={`transition-transform ${expanded ? "rotate-180" : ""}`} style={{ color: "var(--text-1)" }}>
-            ▾
-          </span>
         </span>
-      </button>
-      {expanded && (
-        <div className="mt-2">
-          {visit.summary ? (
-            <p className="text-sm leading-6" style={{ color: "var(--text-1)" }}>{visit.summary}</p>
-          ) : visit.transcript ? (
-            <p className="text-xs italic" style={{ color: "var(--text-1)" }}>No summary available for this visit.</p>
-          ) : (
-            <p className="text-xs italic" style={{ color: "var(--text-1)" }}>No transcript saved.</p>
-          )}
-        </div>
+      </div>
+      {visit.summary ? (
+        <p
+          className="mt-1 text-sm leading-6"
+          style={{ color: "var(--text-2)" }}
+        >
+          {visit.summary}
+        </p>
+      ) : visit.transcript ? (
+        <p
+          className="mt-1 text-xs italic"
+          style={{ color: "var(--text-3)" }}
+        >
+          No summary available for this visit.
+        </p>
+      ) : (
+        <p
+          className="mt-1 text-xs italic"
+          style={{ color: "var(--text-3)" }}
+        >
+          No transcript saved.
+        </p>
       )}
-    </li>
+    </>
   );
 }
 

@@ -247,13 +247,22 @@ def narrate_diff(snapshot, current_state):
         return ""
     response = anthropic_client.messages.create(
         model=LLM_MODEL,
-        max_tokens=200,
+        max_tokens=400,
         system=(
-            "You write terse clinical handoff lines. Given a doctor's prior view and "
-            "the current state, summarize what changed in 1-2 short sentences, "
-            "≤40 words total. Use clinical shorthand. Speak directly to the doctor "
-            "(second person). Skip anything unchanged. If nothing meaningful "
-            "changed, return an empty string. No preamble, no markdown, no labels."
+            "You produce a clinical-handoff change feed. Given the doctor's prior "
+            "view of a patient and the current state, output ONE LINE PER "
+            "MEANINGFUL CHANGE, each starting with '• '. Each line is its own "
+            "atomic delta. Use clinical shorthand and concrete values.\n\n"
+            "Examples:\n"
+            "• Started Metformin 500 mg BID\n"
+            "• BP improved 165/102 → 138/86\n"
+            "• Added type 2 diabetes (A1C 7.4)\n"
+            "• Plan: recheck A1C in 2 wks\n\n"
+            "Rules:\n"
+            "- Skip anything unchanged.\n"
+            "- ≤6 lines total. Most-clinically-significant first.\n"
+            "- No preamble, no headers, no second-person framing — just bullets.\n"
+            "- If nothing meaningful changed, return an empty string."
         ),
         messages=[
             {

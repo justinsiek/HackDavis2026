@@ -28,7 +28,7 @@ export default function TopBar({ doctorName, onLogout, leftAction, rightActions 
         <img
           src="/clair-logo.png"
           alt="Clair"
-          className="h-20 w-auto select-none -ml-2 shrink-0"
+          className="h-[43px] w-auto select-none -ml-2 shrink-0"
           draggable={false}
         />
         {leftAction && <div className="flex items-center min-w-0">{leftAction}</div>}

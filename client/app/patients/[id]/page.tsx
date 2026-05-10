@@ -943,6 +943,7 @@ function Bento({
           editing={isEditing}
           onChange={(v) => onTextFieldChange("current_presentation", v)}
           headerAction={history("current_presentation")}
+          highlightContent
         />
       </div>
       <div className="lg:col-span-4">
@@ -1091,7 +1092,7 @@ function HistoryButton({
 }) {
   const title =
     count === 0
-      ? "No prior edits — click to view current vs. last visit"
+      ? "No prior edits. Click to view current vs. last visit"
       : count === 1
         ? "1 prior edit"
         : `${count} prior edits`;
@@ -1112,7 +1113,7 @@ function HistoryButton({
         height="12"
         viewBox="0 0 16 16"
         fill="none"
-        stroke="currentColor"
+        stroke="var(--text-1)"
         strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -1147,13 +1148,11 @@ function PatientHeaderCard({
   if (patient.dob) meta.push(`${calcAge(patient.dob)} years old`);
   if (patient.sex) meta.push(formatSex(patient.sex));
   if (patient.height_cm) meta.push(formatHeight(patient.height_cm));
-  meta.push(
-    `Admitted ${new Date(patient.admitted_at).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    })}`
-  );
+  meta.push(`Admitted ${new Date(patient.admitted_at).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })}`);
   return (
     <section
       className="flex h-full flex-col rounded-xl p-6"
@@ -1186,16 +1185,16 @@ function PatientHeaderCard({
           </h1>
           <p
             className="mt-1.5 text-sm"
-            style={{ color: "var(--text-2)" }}
+            style={{ color: "var(--accent)" }}
           >
-            {meta.join("  ·  ")}
+            {meta.join(" · ")}
           </p>
         </div>
         {historyAction && <div className="self-start">{historyAction}</div>}
       </div>
 
       {/* Synopsis — hero treatment */}
-      <div className="mt-5">
+      <div className="mt-1">
         {editing ? (
           <>
             <div
@@ -1299,7 +1298,7 @@ function WatchForSection({ items }: { items: string[] | null }) {
             </ul>
           ) : (
             <p className="text-sm italic" style={{ color: "var(--text-1)" }}>
-              No risks flagged yet — the AI will surface forward-looking
+              No risks flagged yet. The AI will surface forward-looking
               concerns here as the patient&rsquo;s condition evolves.
             </p>
           )}
@@ -1345,7 +1344,7 @@ function ChangedCard({
         {totalChanges > 0 && (
           <span
             className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-medium"
-            style={{ background: "#FDE68A", color: "#78350F" }}
+            style={{ background: "#fff", color: "#0F172A", border: "1px solid #0F172A" }}
           >
             {totalChanges}
           </span>
@@ -1355,7 +1354,7 @@ function ChangedCard({
       {fieldDiffs.length === 0 ? (
         <p className="text-sm italic" style={{ color: "#92400E" }}>
           {isFirstView
-            ? "First time viewing this patient — no prior baseline to compare against."
+            ? "First time viewing this patient. No prior baseline to compare against."
             : "Nothing new since your last visit."}
         </p>
       ) : (
@@ -1420,7 +1419,7 @@ function FieldDiffAccordion({
           </span>
           <span
             className="inline-flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-medium leading-none"
-            style={{ background: "#FDE68A", color: "#78350F" }}
+            style={{ background: "#fff", color: "#0F172A", border: "1px solid #0F172A" }}
           >
             {count}
           </span>
@@ -1693,7 +1692,7 @@ function VitalsEditModal({
     >
       <p className="mb-2 text-xs" style={{ color: "var(--text-1)" }}>
         Edit the raw JSON. Changes only apply to your draft when you click
-        Save — Cancel discards them.
+        Save. Cancel discards them.
       </p>
       <textarea
         value={raw}
@@ -2022,15 +2021,12 @@ function MedicationsCard({
                 {m.name}
               </div>
               {(m.dose || m.frequency) && (
-                <div
-                  className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-5"
-                  style={{ color: "var(--text-3)" }}
-                >
-                  {m.dose && <span className="tracking-tight">{m.dose}</span>}
+                <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-5">
+                  {m.dose && <span className="tracking-tight font-medium" style={{ color: "var(--accent)" }}>{m.dose}</span>}
                   {m.dose && m.frequency && (
                     <span style={{ color: "var(--text-3)" }}>·</span>
                   )}
-                  {m.frequency && <span>{m.frequency}</span>}
+                  {m.frequency && <span style={{ color: "var(--text-1)" }}>{m.frequency}</span>}
                 </div>
               )}
             </li>
@@ -2045,6 +2041,69 @@ function MedicationsCard({
 // Generic text card
 // ---------------------------------------------------------------------------
 
+const STOPWORDS = new Set([
+  "the","a","an","and","or","but","is","are","was","were","be","been","being",
+  "have","has","had","do","does","did","will","would","could","should","may",
+  "might","must","shall","can","to","of","in","on","at","by","for","with",
+  "from","as","this","that","these","those","it","its","he","she","they",
+  "we","i","you","her","his","our","their","my","your","not","no","nor",
+  "so","yet","both","either","neither","each","few","more","most","other",
+  "some","such","than","then","too","very","just","now","new","also","about",
+  "adult","male","female","patient","reported","noted","denies","reports",
+]);
+
+function highlightClinical(text: string): ReactNode {
+  const clauses = text.split(/(?<=[.;!?\n])\s*/);
+  const out: ReactNode[] = [];
+
+  clauses.forEach((clause, ci) => {
+    if (!clause.trim()) return;
+    const wordRegex = /[\w/'-]+/g;
+    const words: { word: string; start: number; end: number }[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = wordRegex.exec(clause)) !== null)
+      words.push({ word: m[0], start: m.index, end: m.index + m[0].length });
+
+    const topStarts = new Set(
+      words
+        .filter(w => !STOPWORDS.has(w.word.toLowerCase()) && w.word.length >= 5)
+        .map(w => ({ ...w, score: w.word.length + (w.word.includes("/") ? 3 : 0) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 1)
+        .map(w => w.start)
+    );
+
+    let pos = 0;
+    const parts: ReactNode[] = [];
+    words.forEach(({ word, start, end }) => {
+      if (start > pos) parts.push(clause.slice(pos, start));
+      if (topStarts.has(start)) {
+        parts.push(
+          <span
+            key={start}
+            style={{
+              textDecoration: "underline",
+              textDecorationColor: "var(--accent)",
+              textDecorationThickness: 2,
+              textUnderlineOffset: 3,
+            }}
+          >
+            {word}
+          </span>
+        );
+      } else {
+        parts.push(word);
+      }
+      pos = end;
+    });
+    if (pos < clause.length) parts.push(clause.slice(pos));
+    out.push(<span key={ci}>{parts}</span>);
+    if (ci < clauses.length - 1) out.push(" ");
+  });
+
+  return <>{out}</>;
+}
+
 function TextCard({
   title,
   content,
@@ -2052,13 +2111,15 @@ function TextCard({
   editing,
   onChange,
   headerAction,
+  highlightContent,
 }: {
-  title: string;
+  title: ReactNode;
   content: string;
   emptyText: string;
   editing: boolean;
   onChange: (v: string | null) => void;
   headerAction?: ReactNode;
+  highlightContent?: boolean;
 }) {
   return (
     <BentoCard>
@@ -2073,7 +2134,7 @@ function TextCard({
         />
       ) : content ? (
         <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: "var(--text-1)" }}>
-          {content}
+          {highlightContent ? highlightClinical(content) : content}
         </p>
       ) : (
         <Empty>{emptyText}</Empty>
@@ -2203,7 +2264,7 @@ function LongTermGoalCard({
               />
             </div>
 
-            <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+            <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-1)" }}>
               {expanded ? "Collapse journey" : "See the full journey →"}
             </p>
           </button>
@@ -2468,13 +2529,16 @@ function LabsCard({ labs }: { labs: Lab[] }) {
   return (
     <BentoCard>
       <CardHeader
-        title={
-          <span>
-            Labs
-            {abnormalCount > 0 && (
-              <span style={{ color: "var(--accent)" }}> · {abnormalCount} abnormal</span>
-            )}
-          </span>
+        title="Labs"
+        action={
+          abnormalCount > 0 ? (
+            <span
+              className="text-[11px] font-bold uppercase tracking-wider"
+              style={{ color: "var(--accent)" }}
+            >
+              {abnormalCount} abnormal
+            </span>
+          ) : undefined
         }
       />
       <ul className="min-h-0 flex-1 divide-y overflow-hidden text-sm" style={{ borderColor: "var(--border)" }}>
@@ -2493,7 +2557,7 @@ function LabsCard({ labs }: { labs: Lab[] }) {
               )}
               {l.value} {l.unit}
             </span>
-            <span className="hidden w-16 shrink-0 text-right text-xs sm:block" style={{ color: "var(--text-3)" }}>
+            <span className="hidden w-16 shrink-0 text-right text-xs sm:block" style={{ color: "var(--accent)" }}>
               {l.range}
             </span>
             <Sparkline
@@ -2527,15 +2591,15 @@ function VisitHistoryCard({ visits }: { visits: Visit[] }) {
       >
         <h2
           className="text-xs font-bold uppercase tracking-wider"
-          style={{ color: "var(--text-3)", fontFamily: "PPNeueMontreal", fontWeight: 700 }}
+          style={{ color: "var(--text-1)", fontFamily: "PPNeueMontreal", fontWeight: 700 }}
         >
-          Visit history · {visits.length}
+          Visit history
         </h2>
         <span
           aria-hidden="true"
           className="text-xs transition-transform"
           style={{
-            color: "var(--text-3)",
+            color: "var(--text-1)",
             transform: expanded ? "rotate(180deg)" : "none",
           }}
         >
@@ -3158,7 +3222,7 @@ function PlanCard({
               <section key={cat}>
                 <div className="mb-1.5 flex items-center gap-2">
                   <span
-                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-bold"
                     style={{ background: style.bg, border: `1px solid ${style.border}`, color: style.fg }}
                   >
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: style.dot }} />
@@ -3226,7 +3290,7 @@ function PlanItemRow({
     return (
       <li
         className="flex flex-wrap items-center gap-2 rounded-lg p-2"
-        style={{ background: style.bg, border: `1px solid ${style.border}` }}
+        style={{ background: "var(--bg)", borderTop: `2px solid ${style.dot}` }}
       >
         <select
           value={editingCategory}
@@ -3279,8 +3343,8 @@ function PlanItemRow({
     <li
       className="group flex items-center gap-2 rounded-lg p-2"
       style={{
-        background: style.bg,
-        border: `1px ${isAutoCompleted ? "dashed" : "solid"} ${style.border}`,
+        background: "var(--bg)",
+        borderTop: `2px solid ${style.dot}`,
       }}
     >
       <input
@@ -3292,7 +3356,7 @@ function PlanItemRow({
         aria-label={item.done ? "Mark as not done" : "Mark as done"}
         title={
           isAutoCompleted
-            ? "Auto-completed from a visit transcript — uncheck to undo"
+            ? "Auto-completed from a visit transcript. Uncheck to undo."
             : undefined
         }
       />
@@ -3301,9 +3365,9 @@ function PlanItemRow({
         onClick={onStartEdit}
         className="min-w-0 flex-1 truncate text-left text-sm"
         style={{
-          color: style.fg,
+          color: "var(--text-1)",
           textDecoration: item.done ? "line-through" : "none",
-          opacity: item.done ? 0.6 : 1,
+          opacity: item.done ? 0.5 : 1,
         }}
         title={item.text}
       >
@@ -3312,7 +3376,7 @@ function PlanItemRow({
       {isAutoCompleted ? (
         <span
           className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-          style={{ background: "white", border: `1px dashed ${style.border}`, color: style.fg }}
+          style={{ background: "var(--bg)", border: "1px dashed var(--border-strong)", color: "var(--text-2)" }}
           title="Clair inferred this was completed during a visit. Uncheck to undo."
         >
           <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
@@ -3330,7 +3394,7 @@ function PlanItemRow({
         item.created_during_visit_id && (
           <span
             className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-            style={{ background: "white", border: `1px solid ${style.border}`, color: style.fg }}
+            style={{ background: "var(--bg)", border: "1px solid var(--border-strong)", color: "var(--text-2)" }}
             title="Added from a visit transcript"
           >
             from visit

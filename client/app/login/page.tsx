@@ -44,7 +44,7 @@ export default function LoginPage() {
         <img
           src="/clair-logo.png"
           alt="Clair"
-          className="h-20 w-auto select-none mb-6 -ml-2"
+          className="h-[43px] w-auto select-none mb-6 -ml-2"
           draggable={false}
         />
         <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A]">Sign in</h1>

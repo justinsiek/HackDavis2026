@@ -256,7 +256,7 @@ export default function PatientsPage() {
                           <div className="text-lg font-medium text-[#0F172A] truncate">
                             {p.name}
                           </div>
-                          <div className="text-base text-[#9CA3AF] mt-1.5">
+                          <div className="text-base mt-1.5 text-[#9CA3AF]">
                             Admitted{" "}
                             {new Date(p.admitted_at).toLocaleDateString(
                               "en-US",

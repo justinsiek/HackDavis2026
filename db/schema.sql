@@ -134,3 +134,29 @@ create table if not exists patient_field_changes (
 
 create index if not exists patient_field_changes_lookup_idx
   on patient_field_changes (patient_id, field, changed_at desc);
+
+-- ---------------------------------------------------------------------------
+-- 9. patient_plan_items (structured "Plan & next steps" items, color-coded)
+-- ---------------------------------------------------------------------------
+create table if not exists patient_plan_items (
+  id                       uuid primary key default gen_random_uuid(),
+  patient_id               uuid not null references patients(id) on delete cascade,
+  category                 text not null
+                             check (category in (
+                               'URGENT', 'Follow-up', 'Tests/Labs',
+                               'Medication', 'Monitoring', 'Lifestyle'
+                             )),
+  text                     text not null,
+  done                     boolean not null default false,
+  created_at               timestamptz not null default now(),
+  created_by               uuid references doctors(id),
+  created_during_visit_id  uuid references visits(id) on delete set null,
+  updated_at               timestamptz not null default now()
+);
+
+-- Backfill column for projects created before transcript-based extraction:
+alter table patient_plan_items
+  add column if not exists created_during_visit_id uuid references visits(id) on delete set null;
+
+create index if not exists patient_plan_items_patient_idx
+  on patient_plan_items (patient_id, created_at desc);

@@ -24,6 +24,9 @@ import {
   Patient,
   PatientDocument,
   PatientState,
+  PlanItem,
+  PlanItemCategory,
+  PLAN_ITEM_CATEGORIES,
   PublishEditsResponse,
   Visit,
   Vitals,
@@ -1001,13 +1004,10 @@ function Bento({
 
       {/* Row 4: plan & next steps (full width) */}
       <div className="lg:col-span-12">
-        <TextCard
-          title="Plan & next steps"
-          content={state?.treatment_plan ?? ""}
-          emptyText="No plan recorded yet."
-          editing={isEditing}
-          onChange={(v) => onTextFieldChange("treatment_plan", v)}
-          headerAction={history("treatment_plan")}
+        <PlanCard
+          patientId={patient.id}
+          items={data.plan_items}
+          onChange={onChange}
         />
       </div>
 
@@ -2620,6 +2620,381 @@ function DocIcon() {
       <path d="M3 1.5h6.5L13 5v9.5H3z" />
       <path d="M9.5 1.5V5H13" />
     </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan & next steps
+// ---------------------------------------------------------------------------
+
+const PLAN_CATEGORY_STYLES: Record<
+  PlanItemCategory,
+  { bg: string; border: string; fg: string; dot: string }
+> = {
+  URGENT:       { bg: "#FEF2F2", border: "#FECACA", fg: "#991B1B", dot: "#EF4444" },
+  "Follow-up":  { bg: "#FFFBEB", border: "#FDE68A", fg: "#92400E", dot: "#F59E0B" },
+  "Tests/Labs": { bg: "#F5F3FF", border: "#DDD6FE", fg: "#5B21B6", dot: "#8B5CF6" },
+  Medication:   { bg: "#EFF6FF", border: "#BFDBFE", fg: "#1E40AF", dot: "#3B82F6" },
+  Monitoring:   { bg: "#F1F5F9", border: "#CBD5E1", fg: "#334155", dot: "#64748B" },
+  Lifestyle:    { bg: "#ECFDF5", border: "#A7F3D0", fg: "#065F46", dot: "#10B981" },
+};
+
+function PlanCard({
+  patientId,
+  items,
+  onChange,
+}: {
+  patientId: string;
+  items: PlanItem[];
+  onChange: () => void;
+}) {
+  const [draftCategory, setDraftCategory] = useState<PlanItemCategory>("Follow-up");
+  const [draftText, setDraftText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [editingCategory, setEditingCategory] = useState<PlanItemCategory>("Follow-up");
+
+  // Local mirror of plan items so toggle/edit/delete update instantly without
+  // a full patient refetch (which would flash isLoading=true on the whole
+  // page). Synced from props whenever the parent loads fresh data.
+  const [localItems, setLocalItems] = useState<PlanItem[]>(items);
+  useEffect(() => {
+    setLocalItems(items);
+  }, [items]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<PlanItemCategory, PlanItem[]>();
+    for (const cat of PLAN_ITEM_CATEGORIES) map.set(cat, []);
+    for (const it of localItems) map.get(it.category)?.push(it);
+    for (const cat of PLAN_ITEM_CATEGORIES) {
+      const list = map.get(cat)!;
+      list.sort((a, b) => {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        return a.created_at.localeCompare(b.created_at);
+      });
+    }
+    return map;
+  }, [localItems]);
+
+  async function handleAdd() {
+    const text = draftText.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<{ plan_item: PlanItem }>(
+        `/api/patients/${patientId}/plan-items`,
+        {
+          method: "POST",
+          body: JSON.stringify({ category: draftCategory, text }),
+        }
+      );
+      setLocalItems((prev) => [...prev, result.plan_item]);
+      setDraftText("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add item");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleToggleDone(item: PlanItem) {
+    const next = !item.done;
+    setLocalItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, done: next } : i))
+    );
+    try {
+      await api(`/api/patients/${patientId}/plan-items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ done: next }),
+      });
+    } catch (err) {
+      setLocalItems((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, done: !next } : i))
+      );
+      setError(err instanceof Error ? err.message : "Failed to update item");
+    }
+  }
+
+  async function handleDelete(item: PlanItem) {
+    if (!window.confirm(`Delete "${item.text}"?`)) return;
+    setLocalItems((prev) => prev.filter((i) => i.id !== item.id));
+    try {
+      await api(`/api/patients/${patientId}/plan-items/${item.id}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      // Couldn't delete on the server — re-sync from parent so the item
+      // reappears, and surface the error.
+      setError(err instanceof Error ? err.message : "Failed to delete item");
+      onChange();
+    }
+  }
+
+  function startEdit(item: PlanItem) {
+    setEditingId(item.id);
+    setEditingText(item.text);
+    setEditingCategory(item.category);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditingText("");
+  }
+
+  async function saveEdit(item: PlanItem) {
+    const text = editingText.trim();
+    if (!text) return;
+    const nextCategory = editingCategory;
+    setLocalItems((prev) =>
+      prev.map((i) =>
+        i.id === item.id ? { ...i, text, category: nextCategory } : i
+      )
+    );
+    cancelEdit();
+    try {
+      await api(`/api/patients/${patientId}/plan-items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ text, category: nextCategory }),
+      });
+    } catch (err) {
+      setLocalItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, text: item.text, category: item.category }
+            : i
+        )
+      );
+      setError(err instanceof Error ? err.message : "Failed to save changes");
+    }
+  }
+
+  return (
+    <BentoCard>
+      <CardHeader title="Plan & next steps" />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select
+          value={draftCategory}
+          onChange={(e) => setDraftCategory(e.target.value as PlanItemCategory)}
+          className="rounded-lg px-2 py-1.5 text-xs font-bold outline-none"
+          style={{
+            border: "1px solid var(--border-strong)",
+            background: PLAN_CATEGORY_STYLES[draftCategory].bg,
+            color: PLAN_CATEGORY_STYLES[draftCategory].fg,
+          }}
+        >
+          {PLAN_ITEM_CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <input
+          value={draftText}
+          onChange={(e) => setDraftText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleAdd();
+            }
+          }}
+          placeholder="Add a plan item…"
+          className="min-w-0 flex-1 rounded-lg px-2 py-1.5 text-sm outline-none"
+          style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)", background: "var(--bg)" }}
+        />
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={busy || !draftText.trim()}
+          className="rounded-lg px-2.5 py-1 text-xs font-bold transition-colors hover:bg-slate-100 disabled:opacity-60"
+          style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
+        >
+          {busy ? "Adding…" : "Add"}
+        </button>
+      </div>
+      {error && (
+        <p
+          className="mb-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+          style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#EF4444" }} />
+          {error}
+        </p>
+      )}
+      {localItems.length === 0 ? (
+        <Empty>No plan items yet.</Empty>
+      ) : (
+        <div className="flex flex-1 flex-col gap-3">
+          {PLAN_ITEM_CATEGORIES.map((cat) => {
+            const list = grouped.get(cat) ?? [];
+            if (list.length === 0) return null;
+            const style = PLAN_CATEGORY_STYLES[cat];
+            return (
+              <section key={cat}>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"
+                    style={{ background: style.bg, border: `1px solid ${style.border}`, color: style.fg }}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: style.dot }} />
+                    {cat}
+                  </span>
+                  <span className="text-[11px]" style={{ color: "var(--text-1)" }}>
+                    {list.length}
+                  </span>
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {list.map((item) => (
+                    <PlanItemRow
+                      key={item.id}
+                      item={item}
+                      isEditing={editingId === item.id}
+                      editingText={editingText}
+                      editingCategory={editingCategory}
+                      onEditTextChange={setEditingText}
+                      onEditCategoryChange={setEditingCategory}
+                      onStartEdit={() => startEdit(item)}
+                      onCancelEdit={cancelEdit}
+                      onSaveEdit={() => saveEdit(item)}
+                      onToggleDone={() => handleToggleDone(item)}
+                      onDelete={() => handleDelete(item)}
+                    />
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </BentoCard>
+  );
+}
+
+function PlanItemRow({
+  item,
+  isEditing,
+  editingText,
+  editingCategory,
+  onEditTextChange,
+  onEditCategoryChange,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onToggleDone,
+  onDelete,
+}: {
+  item: PlanItem;
+  isEditing: boolean;
+  editingText: string;
+  editingCategory: PlanItemCategory;
+  onEditTextChange: (v: string) => void;
+  onEditCategoryChange: (c: PlanItemCategory) => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onToggleDone: () => void;
+  onDelete: () => void;
+}) {
+  const style = PLAN_CATEGORY_STYLES[item.category];
+
+  if (isEditing) {
+    return (
+      <li
+        className="flex flex-wrap items-center gap-2 rounded-lg p-2"
+        style={{ background: style.bg, border: `1px solid ${style.border}` }}
+      >
+        <select
+          value={editingCategory}
+          onChange={(e) => onEditCategoryChange(e.target.value as PlanItemCategory)}
+          className="rounded-md px-1.5 py-1 text-xs font-bold outline-none"
+          style={{
+            border: `1px solid ${style.border}`,
+            background: "white",
+            color: PLAN_CATEGORY_STYLES[editingCategory].fg,
+          }}
+        >
+          {PLAN_ITEM_CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <input
+          value={editingText}
+          onChange={(e) => onEditTextChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); onSaveEdit(); }
+            if (e.key === "Escape") { e.preventDefault(); onCancelEdit(); }
+          }}
+          autoFocus
+          className="min-w-0 flex-1 rounded-md px-2 py-1 text-sm outline-none"
+          style={{ border: `1px solid ${style.border}`, color: "var(--text-1)", background: "white" }}
+        />
+        <button
+          type="button"
+          onClick={onSaveEdit}
+          className="rounded-md px-2 py-0.5 text-[11px] font-bold transition-colors hover:bg-white"
+          style={{ border: `1px solid ${style.border}`, color: style.fg }}
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={onCancelEdit}
+          className="rounded-md px-2 py-0.5 text-[11px] font-bold transition-colors hover:bg-white"
+          style={{ border: `1px solid ${style.border}`, color: style.fg }}
+        >
+          Cancel
+        </button>
+      </li>
+    );
+  }
+
+  return (
+    <li
+      className="group flex items-center gap-2 rounded-lg p-2"
+      style={{ background: style.bg, border: `1px solid ${style.border}` }}
+    >
+      <input
+        type="checkbox"
+        checked={item.done}
+        onChange={onToggleDone}
+        className="h-3.5 w-3.5 shrink-0 cursor-pointer"
+        style={{ accentColor: style.dot }}
+        aria-label={item.done ? "Mark as not done" : "Mark as done"}
+      />
+      <button
+        type="button"
+        onClick={onStartEdit}
+        className="min-w-0 flex-1 truncate text-left text-sm"
+        style={{
+          color: style.fg,
+          textDecoration: item.done ? "line-through" : "none",
+          opacity: item.done ? 0.6 : 1,
+        }}
+        title={item.text}
+      >
+        {item.text}
+      </button>
+      {item.created_during_visit_id && (
+        <span
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+          style={{ background: "white", border: `1px solid ${style.border}`, color: style.fg }}
+          title="Added from a visit transcript"
+        >
+          from visit
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onDelete}
+        aria-label="Delete plan item"
+        className="shrink-0 opacity-0 transition group-hover:opacity-100 hover:text-[#DC2626]"
+        style={{ color: style.fg }}
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M3 4h8M5.5 4V2.5h3V4M4.5 4l.5 8h4l.5-8" />
+        </svg>
+      </button>
+    </li>
   );
 }
 

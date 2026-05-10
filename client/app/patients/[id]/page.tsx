@@ -19,6 +19,7 @@ import {
   Medication,
   Patient,
   PatientDocument,
+  Visit,
   Vitals,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -38,6 +39,9 @@ export default function PatientDetailPage({ params }: Props) {
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null);
   const [isStartingVisit, setIsStartingVisit] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [noteText, setNoteText] = useState<string | null>(null);
+  const [noteSourceVisitId, setNoteSourceVisitId] = useState<string | null>(null);
+  const [isDraftingNote, setIsDraftingNote] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -86,6 +90,30 @@ export default function PatientDetailPage({ params }: Props) {
     }
   }
 
+  const latestVisit = data?.visits?.[0] ?? null;
+
+  async function draftAdmissionNote() {
+    if (!latestVisit) return;
+    setError(null);
+    setIsDraftingNote(true);
+    try {
+      const result = await api<{ note: string; error?: string }>(
+        `/api/visits/${latestVisit.id}/note`,
+        { method: "POST" }
+      );
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setNoteText(result.note);
+        setNoteSourceVisitId(latestVisit.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to draft note");
+    } finally {
+      setIsDraftingNote(false);
+    }
+  }
+
   if (authLoading || !doctor) return null;
 
   if (activeVisitId && data?.patient) {
@@ -122,6 +150,18 @@ export default function PatientDetailPage({ params }: Props) {
                 <span className="font-medium text-zinc-900">{doctor.name}</span>
               </span>
               <button
+                onClick={draftAdmissionNote}
+                disabled={isDraftingNote || !latestVisit}
+                title={
+                  !latestVisit
+                    ? "Record an interaction first"
+                    : "Draft an admission note from the latest visit"
+                }
+                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
+              >
+                {isDraftingNote ? "Drafting…" : "Draft Admission Note"}
+              </button>
+              <button
                 onClick={() => setIsChatOpen((o) => !o)}
                 disabled={!data?.patient}
                 className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
@@ -133,7 +173,7 @@ export default function PatientDetailPage({ params }: Props) {
                 disabled={isStartingVisit || !data?.patient}
                 className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60"
               >
-                {isStartingVisit ? "Starting…" : "Record interaction"}
+                {isStartingVisit ? "Starting…" : "Record Interaction"}
               </button>
             </div>
           </div>
@@ -157,6 +197,30 @@ export default function PatientDetailPage({ params }: Props) {
         onClose={() => setIsChatOpen(false)}
         patientName={data?.patient?.name ?? ""}
       />
+
+      {noteText !== null && noteSourceVisitId && (
+        <NoteModal
+          note={noteText}
+          doctorName={
+            data?.visits?.find((v) => v.id === noteSourceVisitId)?.doctor_name ??
+            ""
+          }
+          date={(() => {
+            const v = data?.visits?.find((v) => v.id === noteSourceVisitId);
+            return v
+              ? new Date(v.started_at).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })
+              : "";
+          })()}
+          onClose={() => {
+            setNoteText(null);
+            setNoteSourceVisitId(null);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -292,13 +356,9 @@ function Bento({
         />
       </div>
 
-      {/* Row 5: physical exam + plan & next steps */}
+      {/* Row 5: visit history + plan & next steps */}
       <div className="lg:col-span-6">
-        <TextCard
-          title="Physical exam"
-          content={state?.physical_exam ?? ""}
-          emptyText="No exam findings."
-        />
+        <VisitHistoryCard visits={data.visits} />
       </div>
       <div className="lg:col-span-6">
         <TextCard
@@ -617,6 +677,156 @@ function LabsCard({ labs }: { labs: Lab[] }) {
         ))}
       </ul>
     </BentoCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Visit history
+// ---------------------------------------------------------------------------
+
+function VisitHistoryCard({ visits }: { visits: Visit[] }) {
+  return (
+    <BentoCard>
+      <CardHeader title="Visit history" />
+      {visits.length === 0 ? (
+        <Empty>No prior visits recorded.</Empty>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {visits.map((v) => (
+            <VisitRow key={v.id} visit={v} />
+          ))}
+        </ul>
+      )}
+    </BentoCard>
+  );
+}
+
+function VisitRow({ visit }: { visit: Visit }) {
+  const [expanded, setExpanded] = useState(false);
+  const date = new Date(visit.started_at).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return (
+    <li className="py-2 first:pt-0 last:pb-0">
+      <button
+        type="button"
+        onClick={() => setExpanded((o) => !o)}
+        className="flex w-full items-baseline justify-between gap-3 text-left"
+      >
+        <span className="truncate font-medium text-zinc-900">
+          {visit.doctor_name}
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-xs text-zinc-500">
+          {date}
+          <span
+            className={`text-zinc-400 transition-transform ${
+              expanded ? "rotate-180" : ""
+            }`}
+          >
+            ▾
+          </span>
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-2">
+          {visit.summary ? (
+            <p className="text-sm leading-6 text-zinc-700">{visit.summary}</p>
+          ) : visit.transcript ? (
+            <p className="text-xs italic text-zinc-400">
+              No summary available for this visit.
+            </p>
+          ) : (
+            <p className="text-xs italic text-zinc-400">No transcript saved.</p>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function NoteModal({
+  note,
+  doctorName,
+  date,
+  onClose,
+}: {
+  note: string;
+  doctorName: string;
+  date: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(note);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4 py-8"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-zinc-200"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-3">
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-900">Draft note</h2>
+            <p className="text-xs text-zinc-500">
+              {doctorName} · {date}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={copy}
+              className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="text-zinc-400 transition hover:text-zinc-900"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
+                <path d="M3 3l12 12M15 3L3 15" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <pre className="flex-1 overflow-auto whitespace-pre-wrap px-5 py-4 font-mono text-sm leading-6 text-zinc-900">
+          {note}
+        </pre>
+      </div>
+    </div>
   );
 }
 

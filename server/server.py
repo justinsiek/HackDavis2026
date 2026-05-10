@@ -40,7 +40,6 @@ STATE_FIELDS = [
     "current_medications",
     "treatment_plan",
     "recent_vitals",
-    "physical_exam",
     "long_term_goals",
 ]
 
@@ -55,7 +54,6 @@ def state_subset(state):
             "current_medications": [],
             "treatment_plan": "",
             "recent_vitals": None,
-            "physical_exam": "",
             "long_term_goals": "",
         }
     return {
@@ -65,7 +63,6 @@ def state_subset(state):
         "current_medications": state.get("current_medications") or [],
         "treatment_plan": state.get("treatment_plan") or "",
         "recent_vitals": state.get("recent_vitals"),
-        "physical_exam": state.get("physical_exam") or "",
         "long_term_goals": state.get("long_term_goals") or "",
     }
 
@@ -139,14 +136,6 @@ UPDATE_PATIENT_STATE_TOOL = {
                     "taken_at": {"type": "string"},
                 },
             },
-            "physical_exam": {
-                "type": "string",
-                "description": (
-                    "Exam findings as terse fragments separated by '; ' "
-                    "(e.g. 'lungs CTAB; no edema; HR regular'). "
-                    "Clinical shorthand OK. ≤30 words. Empty if no exam."
-                ),
-            },
             "long_term_goals": {
                 "type": "string",
                 "description": (
@@ -162,7 +151,6 @@ UPDATE_PATIENT_STATE_TOOL = {
             "current_medications",
             "treatment_plan",
             "recent_vitals",
-            "physical_exam",
             "long_term_goals",
         ],
     },
@@ -206,6 +194,47 @@ def extract_patient_state(current_state, transcript):
         if block.type == "tool_use" and block.name == "update_patient_state":
             return block.input
     return base
+
+
+def summarize_visit(transcript):
+    """Generate a 1-2 sentence summary of a visit transcript."""
+    if not anthropic_client or not transcript.strip():
+        return ""
+    response = anthropic_client.messages.create(
+        model=LLM_MODEL,
+        max_tokens=120,
+        system=(
+            "Summarize this doctor-patient visit in 1-2 short sentences focused "
+            "on what was discussed and what was decided. Use clinical shorthand. "
+            "≤30 words. No preamble, no markdown, just the summary."
+        ),
+        messages=[{"role": "user", "content": f"TRANSCRIPT:\n{transcript}"}],
+    )
+    return response.content[0].text.strip()
+
+
+def draft_visit_note(transcript):
+    """Generate a SOAP-format clinical note from a visit transcript."""
+    if not anthropic_client or not transcript.strip():
+        return ""
+    response = anthropic_client.messages.create(
+        model=LLM_MODEL,
+        max_tokens=800,
+        system=(
+            "You are a clinical scribe drafting a chart note from a doctor-patient "
+            "visit transcript. Produce a SOAP-format note with the four sections "
+            "exactly as headers in this order:\n\n"
+            "SUBJECTIVE\nOBJECTIVE\nASSESSMENT\nPLAN\n\n"
+            "Each section should be terse and clinical — fragments OK, clinical "
+            "shorthand encouraged. Use bullet-style lines (one fact per line) where "
+            "natural; otherwise short sentences. Do NOT invent findings, vitals, or "
+            "diagnoses not in the transcript. If a section has no content from the "
+            "transcript, write a single line: 'Not documented.' Output the note "
+            "only — no preamble, no markdown formatting beyond the four headers."
+        ),
+        messages=[{"role": "user", "content": f"TRANSCRIPT:\n{transcript}"}],
+    )
+    return response.content[0].text.strip()
 
 
 def narrate_diff(snapshot, current_state):
@@ -283,7 +312,7 @@ def login():
 
 @app.route("/api/patients", methods=["GET"])
 def list_patients():
-    _, err = require_doctor()
+    doctor, err = require_doctor()
     if err:
         return err
     result = db_call(
@@ -292,7 +321,36 @@ def list_patients():
         .order("admitted_at", desc=True)
         .execute
     )
-    return jsonify({"patients": result.data or []})
+    patients = result.data or []
+    if not patients:
+        return jsonify({"patients": []})
+
+    states = db_call(
+        supabase.table("patient_state")
+        .select("patient_id, updated_at, updated_by_visit_id")
+        .execute
+    )
+    state_by_id = {s["patient_id"]: s for s in (states.data or [])}
+
+    snaps = db_call(
+        supabase.table("doctor_patient_snapshots")
+        .select("patient_id, snapshot_at")
+        .eq("doctor_id", doctor["id"])
+        .execute
+    )
+    snap_by_id = {s["patient_id"]: s["snapshot_at"] for s in (snaps.data or [])}
+
+    for p in patients:
+        state = state_by_id.get(p["id"])
+        snap_at = snap_by_id.get(p["id"])
+        # Only flag as "new" if THIS doctor has previously engaged (has a snapshot)
+        # AND the patient state has been updated since their snapshot.
+        if not state or not snap_at or not state.get("updated_by_visit_id"):
+            p["has_new_updates"] = False
+        else:
+            p["has_new_updates"] = state["updated_at"] > snap_at
+
+    return jsonify({"patients": patients})
 
 
 @app.route("/api/patients", methods=["POST"])
@@ -384,6 +442,28 @@ def get_patient(patient_id):
         .execute
     )
 
+    visits_result = db_call(
+        supabase.table("visits")
+        .select("id, doctor_id, started_at, ended_at, status, transcript, summary")
+        .eq("patient_id", patient_id)
+        .eq("status", "complete")
+        .order("started_at", desc=True)
+        .execute
+    )
+    visits = visits_result.data or []
+
+    if visits:
+        doctor_ids = list({v["doctor_id"] for v in visits})
+        doctors_result = db_call(
+            supabase.table("doctors")
+            .select("id, name")
+            .in_("id", doctor_ids)
+            .execute
+        )
+        name_by_id = {d["id"]: d["name"] for d in (doctors_result.data or [])}
+        for v in visits:
+            v["doctor_name"] = name_by_id.get(v["doctor_id"], "Unknown")
+
     return jsonify({
         "patient": patient,
         "current_state": current_state,
@@ -391,6 +471,7 @@ def get_patient(patient_id):
         "narrative": narrative,
         "is_first_view": is_first_view,
         "documents": docs_result.data or [],
+        "visits": visits,
     })
 
 
@@ -489,6 +570,27 @@ def start_visit():
     return jsonify({"visit_id": visit_id})
 
 
+@app.route("/api/visits/<visit_id>/note", methods=["POST"])
+def generate_visit_note(visit_id):
+    _, err = require_doctor()
+    if err:
+        return err
+    visit_row = db_call(
+        supabase.table("visits")
+        .select("transcript")
+        .eq("id", visit_id)
+        .limit(1)
+        .execute
+    )
+    if not visit_row.data:
+        return jsonify({"error": "visit not found"}), 404
+    transcript = visit_row.data[0].get("transcript") or ""
+    if not transcript.strip():
+        return jsonify({"note": "", "error": "Visit has no transcript."}), 200
+    note = draft_visit_note(transcript)
+    return jsonify({"note": note})
+
+
 @app.route("/api/visits/<visit_id>/finalize", methods=["POST"])
 def finalize_visit(visit_id):
     doctor, err = require_doctor()
@@ -498,10 +600,13 @@ def finalize_visit(visit_id):
     transcript = body.get("transcript", "")
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    visit_summary = summarize_visit(transcript)
+
     db_call(
         supabase.table("visits")
         .update({
             "transcript": transcript,
+            "summary": visit_summary,
             "ended_at": now_iso,
             "status": "complete",
         })

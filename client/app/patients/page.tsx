@@ -113,7 +113,11 @@ export default function PatientsPage() {
               <li key={p.id} className="relative">
                 <Link
                   href={`/patients/${p.id}`}
-                  className="group flex h-full flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 transition hover:shadow-md hover:ring-zinc-300"
+                  className={`group flex h-full flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition hover:shadow-md ${
+                    p.has_new_updates
+                      ? "ring-2 ring-amber-300 hover:ring-amber-400"
+                      : "ring-zinc-200 hover:ring-zinc-300"
+                  }`}
                 >
                   <div className="relative aspect-square w-full overflow-hidden bg-zinc-100">
                     {p.photo_data ? (
@@ -127,6 +131,15 @@ export default function PatientsPage() {
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-200 text-4xl font-semibold text-zinc-500">
                         {initials(p.name)}
                       </div>
+                    )}
+                    {p.has_new_updates && (
+                      <span
+                        title="New updates since your last visit"
+                        className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-2.5 py-1 text-xs font-medium text-white shadow-sm"
+                      >
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+                        New
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center justify-between gap-3 px-5 py-4">

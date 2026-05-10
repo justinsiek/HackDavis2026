@@ -42,9 +42,13 @@ create table if not exists visits (
   status                text not null default 'active'
                           check (status in ('active', 'processing', 'complete')),
   transcript            text,
+  summary               text,
   llm_extracted_fields  jsonb,
   final_fields          jsonb
 );
+
+-- For projects already created before `summary` was added:
+alter table visits add column if not exists summary text;
 
 -- Most patient-detail queries pull recent visits for one patient.
 create index if not exists visits_patient_started_idx

@@ -16,6 +16,7 @@ export type Patient = {
   weight_kg: number | null;
   photo_data: string | null;
   admitted_at: string;
+  has_new_updates?: boolean;
 };
 
 export type Diagnosis = {
@@ -46,9 +47,19 @@ export type PatientState = {
   current_medications: Medication[];
   treatment_plan: string | null;
   recent_vitals: Vitals | null;
-  physical_exam: string | null;
   long_term_goals: string | null;
   updated_at: string;
+};
+
+export type Visit = {
+  id: string;
+  doctor_id: string;
+  doctor_name: string;
+  started_at: string;
+  ended_at: string | null;
+  status: "active" | "processing" | "complete";
+  transcript: string | null;
+  summary: string | null;
 };
 
 export type ViewerSnapshot = {
@@ -72,6 +83,7 @@ export type GetPatientResponse = {
   narrative: string | null;
   is_first_view: boolean;
   documents: PatientDocument[];
+  visits: Visit[];
 };
 
 export function getStoredDoctor(): Doctor | null {

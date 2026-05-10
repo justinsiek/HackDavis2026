@@ -237,40 +237,134 @@ def draft_visit_note(transcript):
     return response.content[0].text.strip()
 
 
-def narrate_diff(snapshot, current_state):
-    """Ask Claude to narrate what's changed between a doctor's snapshot and current state."""
-    if not anthropic_client:
-        return ""
+def _fmt_med(m):
+    if not isinstance(m, dict):
+        return str(m)
+    parts = [m.get("name") or "", m.get("dose") or "", m.get("frequency") or ""]
+    return " ".join(p for p in parts if p).strip()
+
+
+def _fmt_dx(d):
+    if not isinstance(d, dict):
+        return str(d)
+    cond = d.get("condition") or ""
+    pieces = [cond]
+    if d.get("since"):
+        pieces.append(f"({d['since']})")
+    if d.get("notes"):
+        pieces.append(f"— {d['notes']}")
+    return " ".join(p for p in pieces if p).strip()
+
+
+def _diff_text(before, after):
+    b = (before or "").strip()
+    a = (after or "").strip()
+    if b == a:
+        return None
+    return {"before": before or "", "after": after or ""}
+
+
+def _diff_list(before, after, key_fn, fmt_fn):
+    before = before or []
+    after = after or []
+    by_key_before = {key_fn(x): x for x in before}
+    by_key_after = {key_fn(x): x for x in after}
+    added = [fmt_fn(by_key_after[k]) for k in by_key_after if k not in by_key_before]
+    removed = [fmt_fn(by_key_before[k]) for k in by_key_before if k not in by_key_after]
+    modified = []
+    for k, v_before in by_key_before.items():
+        if k in by_key_after and by_key_after[k] != v_before:
+            modified.append({"before": fmt_fn(v_before), "after": fmt_fn(by_key_after[k])})
+    return added, removed, modified
+
+
+def _diff_vitals(before, after):
+    before = before or {}
+    after = after or {}
+    keys = [("bp", "BP"), ("hr", "HR"), ("temp_c", "Temp"), ("o2_sat", "SpO₂")]
+    changes = []
+    for key, label in keys:
+        b = (before.get(key) or "").strip() if isinstance(before.get(key), str) else before.get(key)
+        a = (after.get(key) or "").strip() if isinstance(after.get(key), str) else after.get(key)
+        if (b or "") != (a or ""):
+            changes.append({"key": label, "before": b or "", "after": a or ""})
+    return changes
+
+
+def build_field_diffs(snapshot, current_state):
+    """Deterministically compute per-field diffs between a doctor's snapshot and current state."""
     snap = state_subset(snapshot)
     cur = state_subset(current_state)
-    if snap == cur:
+    diffs = []
+
+    for key, label in [
+        ("synopsis", "Synopsis"),
+        ("current_presentation", "Subjective"),
+        ("treatment_plan", "Plan"),
+        ("long_term_goals", "Long-term goals"),
+    ]:
+        d = _diff_text(snap.get(key), cur.get(key))
+        if d:
+            diffs.append({"field": key, "label": label, "kind": "text", **d})
+
+    a, r, m = _diff_list(
+        snap.get("active_diagnoses"),
+        cur.get("active_diagnoses"),
+        lambda x: (x.get("condition") or "").strip().lower(),
+        _fmt_dx,
+    )
+    if a or r or m:
+        diffs.append({
+            "field": "active_diagnoses",
+            "label": "Active problems",
+            "kind": "list",
+            "added": a, "removed": r, "modified": m,
+        })
+
+    a, r, m = _diff_list(
+        snap.get("current_medications"),
+        cur.get("current_medications"),
+        lambda x: (x.get("name") or "").strip().lower(),
+        _fmt_med,
+    )
+    if a or r or m:
+        diffs.append({
+            "field": "current_medications",
+            "label": "Medications",
+            "kind": "list",
+            "added": a, "removed": r, "modified": m,
+        })
+
+    v = _diff_vitals(snap.get("recent_vitals"), cur.get("recent_vitals"))
+    if v:
+        diffs.append({
+            "field": "recent_vitals",
+            "label": "Vitals",
+            "kind": "vitals",
+            "changes": v,
+        })
+
+    return diffs
+
+
+def summarize_changes(field_diffs):
+    """Ask Claude for a short prose TL;DR over the structured diffs."""
+    if not field_diffs or not anthropic_client:
         return ""
     response = anthropic_client.messages.create(
         model=LLM_MODEL,
-        max_tokens=400,
+        max_tokens=200,
         system=(
-            "You produce a clinical-handoff change feed. Given the doctor's prior "
-            "view of a patient and the current state, output ONE LINE PER "
-            "MEANINGFUL CHANGE, each starting with '• '. Each line is its own "
-            "atomic delta. Use clinical shorthand and concrete values.\n\n"
-            "Examples:\n"
-            "• Started Metformin 500 mg BID\n"
-            "• BP improved 165/102 → 138/86\n"
-            "• Added type 2 diabetes (A1C 7.4)\n"
-            "• Plan: recheck A1C in 2 wks\n\n"
-            "Rules:\n"
-            "- Skip anything unchanged.\n"
-            "- ≤6 lines total. Most-clinically-significant first.\n"
-            "- No preamble, no headers, no second-person framing — just bullets.\n"
-            "- If nothing meaningful changed, return an empty string."
+            "You write a short clinical handoff summary — 1 to 3 sentences — for a "
+            "doctor about what's changed in their patient since they last viewed "
+            "the chart. Use clinical shorthand and concrete values. Lead with what "
+            "matters most clinically. Flowing prose, no bullets, no preamble, no "
+            "headers, no second-person framing."
         ),
         messages=[
             {
                 "role": "user",
-                "content": (
-                    f"YOUR_LAST_VIEW:\n{json.dumps(snap, indent=2)}\n\n"
-                    f"CURRENT_STATE:\n{json.dumps(cur, indent=2)}"
-                ),
+                "content": f"CHANGES:\n{json.dumps(field_diffs, indent=2, default=str)}",
             }
         ],
     )
@@ -435,13 +529,16 @@ def get_patient(patient_id):
 
     is_first_view = viewer_snapshot is None
     narrative = None
+    field_diffs: list = []
     if not is_first_view and current_state:
         snap_at = viewer_snapshot.get("snapshot_at")
         cur_at = current_state.get("updated_at")
         if snap_at and cur_at and snap_at < cur_at:
-            narrative = narrate_diff(
+            field_diffs = build_field_diffs(
                 viewer_snapshot.get("snapshot") or {}, current_state
             )
+            if field_diffs:
+                narrative = summarize_changes(field_diffs)
 
     docs_result = db_call(
         supabase.table("patient_documents")
@@ -478,6 +575,7 @@ def get_patient(patient_id):
         "current_state": current_state,
         "viewer_snapshot": viewer_snapshot,
         "narrative": narrative,
+        "field_diffs": field_diffs,
         "is_first_view": is_first_view,
         "documents": docs_result.data or [],
         "visits": visits,

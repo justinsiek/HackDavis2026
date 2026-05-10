@@ -18,6 +18,7 @@ import {
   EDITABLE_FIELDS,
   EditableField,
   FieldChangeCounts,
+  FieldDiff,
   GetPatientResponse,
   Medication,
   Patient,
@@ -909,10 +910,14 @@ function Bento({
         />
       </div>
       <div className="lg:col-span-6">
-        <ChangedCard narrative={data.narrative} isFirstView={data.is_first_view} />
+        <ChangedCard
+          narrative={data.narrative}
+          fieldDiffs={data.field_diffs ?? []}
+          isFirstView={data.is_first_view}
+        />
       </div>
 
-      {/* Row 2: active problems · subjective · long-term goals — 33/33/33 */}
+      {/* Row 2: active problems · medications · (subjective stacked over long-term goals) */}
       <div className="lg:col-span-4">
         <ProblemsCard
           diagnoses={state?.active_diagnoses ?? []}
@@ -927,28 +932,6 @@ function Bento({
         />
       </div>
       <div className="lg:col-span-4">
-        <TextCard
-          title="Subjective"
-          content={state?.current_presentation ?? ""}
-          emptyText="Nothing reported yet."
-          editing={isEditing}
-          onChange={(v) => onTextFieldChange("current_presentation", v)}
-          headerAction={history("current_presentation")}
-        />
-      </div>
-      <div className="lg:col-span-4">
-        <TextCard
-          title="Long-term goals"
-          content={state?.long_term_goals ?? ""}
-          emptyText="No long-term goals set."
-          editing={isEditing}
-          onChange={(v) => onTextFieldChange("long_term_goals", v)}
-          headerAction={history("long_term_goals")}
-        />
-      </div>
-
-      {/* Row 3: medications · vitals · labs · documents — 25/25/25/25 */}
-      <div className="lg:col-span-3">
         <MedicationsCard
           medications={state?.current_medications ?? []}
           editing={isEditing}
@@ -961,7 +944,27 @@ function Bento({
           historyAction={history("current_medications")}
         />
       </div>
-      <div className="lg:col-span-3">
+      <div className="flex flex-col gap-3 lg:col-span-4">
+        <TextCard
+          title="Subjective"
+          content={state?.current_presentation ?? ""}
+          emptyText="Nothing reported yet."
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("current_presentation", v)}
+          headerAction={history("current_presentation")}
+        />
+        <TextCard
+          title="Long-term goals"
+          content={state?.long_term_goals ?? ""}
+          emptyText="No long-term goals set."
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("long_term_goals", v)}
+          headerAction={history("long_term_goals")}
+        />
+      </div>
+
+      {/* Row 3: vitals · labs · documents */}
+      <div className="lg:col-span-4">
         <VitalsCard
           vitals={state?.recent_vitals ?? null}
           series={vitalsSeries}
@@ -985,10 +988,10 @@ function Bento({
           historyAction={history("recent_vitals")}
         />
       </div>
-      <div className="lg:col-span-3">
+      <div className="lg:col-span-4">
         <LabsCard labs={labs} />
       </div>
-      <div className="lg:col-span-3">
+      <div className="lg:col-span-4">
         <DocumentsCard
           patientId={patient.id}
           documents={data.documents}
@@ -1310,16 +1313,16 @@ function formatSex(sex: string): string {
 
 function ChangedCard({
   narrative,
+  fieldDiffs,
   isFirstView,
 }: {
   narrative: string | null;
+  fieldDiffs: FieldDiff[];
   isFirstView?: boolean;
 }) {
-  // Parse the bulleted delta list. Each non-empty line is a single change.
-  const items: string[] = (narrative ?? "")
-    .split("\n")
-    .map((l) => l.replace(/^[\s•\-*]+/, "").trim())
-    .filter((l) => l.length > 0);
+  const summary = (narrative ?? "").trim();
+  const totalChanges = fieldDiffs.reduce((acc, d) => acc + countChangesInDiff(d), 0);
+  const [openField, setOpenField] = useState<string | null>(null);
 
   return (
     <section
@@ -1333,43 +1336,183 @@ function ChangedCard({
         >
           What&rsquo;s changed since you last saw this patient
         </h2>
-        {items.length > 0 && (
+        {totalChanges > 0 && (
           <span
             className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-medium"
             style={{ background: "#FDE68A", color: "#78350F" }}
           >
-            {items.length}
+            {totalChanges}
           </span>
         )}
       </div>
 
-      {items.length === 0 ? (
+      {fieldDiffs.length === 0 ? (
         <p className="text-sm italic" style={{ color: "#92400E" }}>
           {isFirstView
             ? "First time viewing this patient — no prior baseline to compare against."
             : "Nothing new since your last visit."}
         </p>
       ) : (
-        <ul className="flex flex-col gap-1.5">
-          {items.map((item, i) => (
-            <li
-              key={i}
-              className="flex items-start gap-2.5 rounded-md px-2.5 py-1.5"
-              style={{ background: "rgba(255, 255, 255, 0.55)" }}
-            >
-              <span
-                className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ background: "#D97706" }}
-                aria-hidden="true"
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          {summary && (
+            <p className="text-sm leading-6" style={{ color: "#0F172A" }}>
+              {summary}
+            </p>
+          )}
+          <div className="flex flex-col gap-2">
+            {fieldDiffs.map((diff) => (
+              <FieldDiffAccordion
+                key={diff.field}
+                diff={diff}
+                isOpen={openField === diff.field}
+                onToggle={() =>
+                  setOpenField((prev) => (prev === diff.field ? null : diff.field))
+                }
               />
-              <span className="text-sm leading-6" style={{ color: "#0F172A" }}>
-                {item}
-              </span>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        </div>
       )}
     </section>
+  );
+}
+
+function countChangesInDiff(d: FieldDiff): number {
+  if (d.kind === "text") return 1;
+  if (d.kind === "list") return d.added.length + d.removed.length + d.modified.length;
+  if (d.kind === "vitals") return d.changes.length;
+  return 0;
+}
+
+function FieldDiffAccordion({
+  diff,
+  isOpen,
+  onToggle,
+}: {
+  diff: FieldDiff;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const count = countChangesInDiff(diff);
+  return (
+    <div
+      className="overflow-hidden rounded-lg"
+      style={{ background: "rgba(255, 255, 255, 0.65)", border: "1px solid #FDE68A" }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-white/60"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="text-[11px] font-bold uppercase tracking-wider"
+            style={{ color: "#92400E" }}
+          >
+            {diff.label}
+          </span>
+          <span
+            className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-medium"
+            style={{ background: "#FDE68A", color: "#78350F" }}
+          >
+            {count}
+          </span>
+        </div>
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 10 10"
+          fill="none"
+          aria-hidden="true"
+          style={{
+            transition: "transform 150ms ease",
+            transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+          }}
+        >
+          <path
+            d="M2 4l3 3 3-3"
+            stroke="#92400E"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {isOpen && (
+        <div
+          className="flex flex-col gap-0.5 px-3 pb-3 font-mono text-[12.5px] leading-5"
+          style={{ borderTop: "1px solid #FDE68A" }}
+        >
+          <div className="pt-3" />
+          {diff.kind === "text" && (
+            <>
+              {diff.before.trim() && <DiffLine kind="removed">{diff.before}</DiffLine>}
+              {diff.after.trim() && <DiffLine kind="added">{diff.after}</DiffLine>}
+            </>
+          )}
+          {diff.kind === "list" && (
+            <>
+              {diff.removed.map((line, i) => (
+                <DiffLine key={`r-${i}`} kind="removed">
+                  {line}
+                </DiffLine>
+              ))}
+              {diff.added.map((line, i) => (
+                <DiffLine key={`a-${i}`} kind="added">
+                  {line}
+                </DiffLine>
+              ))}
+              {diff.modified.map((m, i) => (
+                <div key={`m-${i}`} className="flex flex-col gap-0.5">
+                  <DiffLine kind="removed">{m.before}</DiffLine>
+                  <DiffLine kind="added">{m.after}</DiffLine>
+                </div>
+              ))}
+            </>
+          )}
+          {diff.kind === "vitals" &&
+            diff.changes.map((c, i) => (
+              <div key={i} className="flex flex-col gap-0.5">
+                {c.before && (
+                  <DiffLine kind="removed">
+                    {c.key} {c.before}
+                  </DiffLine>
+                )}
+                {c.after && (
+                  <DiffLine kind="added">
+                    {c.key} {c.after}
+                  </DiffLine>
+                )}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiffLine({
+  kind,
+  children,
+}: {
+  kind: "added" | "removed";
+  children: ReactNode;
+}) {
+  const isAdded = kind === "added";
+  return (
+    <div
+      className="flex items-start gap-2 rounded px-2 py-0.5"
+      style={{
+        background: isAdded ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.10)",
+        color: isAdded ? "#14532D" : "#7F1D1D",
+      }}
+    >
+      <span aria-hidden="true" className="select-none font-bold" style={{ width: 12 }}>
+        {isAdded ? "+" : "−"}
+      </span>
+      <span className="whitespace-pre-wrap break-words">{children}</span>
+    </div>
   );
 }
 

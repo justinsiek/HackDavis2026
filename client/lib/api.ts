@@ -77,11 +77,38 @@ export type PatientDocument = {
   uploaded_by: string | null;
 };
 
+export type FieldDiffText = {
+  field: string;
+  label: string;
+  kind: "text";
+  before: string;
+  after: string;
+};
+
+export type FieldDiffList = {
+  field: string;
+  label: string;
+  kind: "list";
+  added: string[];
+  removed: string[];
+  modified: { before: string; after: string }[];
+};
+
+export type FieldDiffVitals = {
+  field: string;
+  label: string;
+  kind: "vitals";
+  changes: { key: string; before: string; after: string }[];
+};
+
+export type FieldDiff = FieldDiffText | FieldDiffList | FieldDiffVitals;
+
 export type GetPatientResponse = {
   patient: Patient;
   current_state: PatientState | null;
   viewer_snapshot: ViewerSnapshot | null;
   narrative: string | null;
+  field_diffs: FieldDiff[];
   is_first_view: boolean;
   documents: PatientDocument[];
   visits: Visit[];

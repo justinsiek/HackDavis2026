@@ -35,54 +35,105 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center px-4 py-16">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-xl bg-white p-8 shadow-sm ring-1 ring-zinc-200"
-      >
-        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Patient Continuity System
+    <div
+      className="flex flex-1 min-h-screen items-center justify-center px-4 py-16"
+      style={{ background: "var(--bg)" }}
+    >
+      <div className="w-full max-w-sm">
+        {/* Brand mark */}
+        <div className="mb-8 flex items-center gap-3">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: "var(--accent)" }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M8 2a4 4 0 100 8 4 4 0 000-8zm0 3v2.5l2 1.5"
+                stroke="white"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M2.5 14c0-3 2.5-4.5 5.5-4.5S13.5 11 13.5 14"
+                stroke="white"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+          <span className="text-base font-bold tracking-tight" style={{ color: "var(--text-1)" }}>
+            Patient Continuity
+          </span>
+        </div>
+
+        <h1
+          className="text-2xl font-bold tracking-tight mb-1"
+          style={{ color: "var(--text-1)" }}
+        >
+          Sign in
+        </h1>
+        <p className="text-sm mb-8" style={{ color: "var(--text-2)" }}>
+          Enter your credentials to access the dashboard.
         </p>
 
-        <div className="mt-6 space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium text-zinc-700">Username</span>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold mb-1.5" style={{ color: "var(--text-1)" }}>
+              Username
+            </label>
             <input
               type="text"
               autoComplete="username"
               autoFocus
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+              placeholder="doctor1"
+              className="block w-full rounded-lg px-3.5 py-2.5 text-sm transition-colors outline-none"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-1)",
+              }}
               required
             />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-zinc-700">Password</span>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold mb-1.5" style={{ color: "var(--text-1)" }}>
+              Password
+            </label>
             <input
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+              className="block w-full rounded-lg px-3.5 py-2.5 text-sm transition-colors outline-none"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-1)",
+              }}
               required
             />
-          </label>
-        </div>
+          </div>
 
-        {error && (
-          <p className="mt-4 text-sm text-red-600">{error}</p>
-        )}
+          {error && (
+            <p className="text-sm" style={{ color: "#dc2626" }}>
+              {error}
+            </p>
+          )}
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="mt-6 w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
-        >
-          {isSubmitting ? "Signing in…" : "Continue"}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full rounded-lg px-4 py-2.5 text-sm font-bold text-white transition-opacity disabled:opacity-60"
+            style={{ background: "var(--accent)" }}
+          >
+            {isSubmitting ? "Signing in…" : "Continue"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

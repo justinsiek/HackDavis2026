@@ -33,6 +33,7 @@ import { Lab, mockLabs, mockVitalsSeries, VitalSeries } from "@/lib/mockClinical
 import RecordingView from "./RecordingView";
 import Sparkline from "./Sparkline";
 import { FieldHistoryPopup } from "./FieldHistoryPopup";
+import Sidebar from "@/components/Sidebar";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -264,6 +265,11 @@ export default function PatientDetailPage({ params }: Props) {
     }
   }
 
+  function handleLogout() {
+    setDoctor(null);
+    router.replace("/login");
+  }
+
   if (authLoading || !doctor) return null;
 
   if (activeVisitId && data?.patient) {
@@ -281,120 +287,114 @@ export default function PatientDetailPage({ params }: Props) {
 
   return (
     <>
-      <div
-        className={`flex flex-1 flex-col transition-[margin-right] duration-200 ${
-          isChatOpen ? "mr-[420px]" : ""
-        }`}
-      >
-        <header className="border-b border-zinc-200 bg-white">
-          <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3">
-            <Link
-              href="/patients"
-              onNavigate={(e) => {
-                if (!hasUnsavedChanges) return;
-                e.preventDefault();
-                setPendingNav(() => () => router.push("/patients"));
-              }}
-              className="text-sm text-zinc-600 hover:text-zinc-900"
-            >
-              ← All patients
-            </Link>
-            <div className="flex items-center gap-3 text-sm">
-              <span className="text-zinc-600">
-                Logged in as{" "}
-                <span className="font-medium text-zinc-900">{doctor.name}</span>
-              </span>
-              {!isEditing ? (
+      <div className="flex min-h-screen">
+        <Sidebar doctorName={doctor.name} onLogout={handleLogout} />
+        <div
+          className={`flex flex-1 flex-col min-w-0 transition-[margin-right] duration-200 ${
+            isChatOpen ? "mr-[420px]" : ""
+          }`}
+        >
+          <header className="border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+            <div className="flex items-center justify-between gap-4 px-6 py-3">
+              <Link
+                href="/patients"
+                onNavigate={(e) => {
+                  if (!hasUnsavedChanges) return;
+                  e.preventDefault();
+                  setPendingNav(() => () => router.push("/patients"));
+                }}
+                className="flex items-center gap-1.5 text-sm transition-colors hover:opacity-70"
+                style={{ color: "var(--text-2)" }}
+              >
+                ← All patients
+              </Link>
+              <div className="flex items-center gap-2 text-sm">
+                {!isEditing ? (
+                  <button
+                    onClick={enterEditMode}
+                    disabled={!data?.current_state}
+                    title={!data?.current_state ? "Patient state not loaded yet" : "Edit this patient's record"}
+                    className="rounded-lg border px-3.5 py-1.5 text-sm font-bold transition-colors hover:bg-slate-50 disabled:opacity-50"
+                    style={{ borderColor: "var(--border-strong)", color: "var(--text-2)" }}
+                  >
+                    Edit record
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => requestNavigation(exitEditMode)}
+                      disabled={isPublishing}
+                      className="rounded-lg border px-3.5 py-1.5 text-sm font-bold transition-colors hover:bg-slate-50 disabled:opacity-50"
+                      style={{ borderColor: "var(--border-strong)", color: "var(--text-2)" }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => publish()}
+                      disabled={isPublishing || !hasUnsavedChanges}
+                      title={!hasUnsavedChanges ? "No changes to publish" : "Publish changes to this record"}
+                      className="rounded-lg px-3.5 py-1.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                      style={{ background: "var(--accent)" }}
+                    >
+                      {isPublishing ? "Publishing…" : "Publish changes"}
+                    </button>
+                  </>
+                )}
                 <button
-                  onClick={enterEditMode}
-                  disabled={!data?.current_state}
-                  title={
-                    !data?.current_state
-                      ? "Patient state not loaded yet"
-                      : "Edit this patient's record"
-                  }
-                  className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
+                  onClick={draftAdmissionNote}
+                  disabled={isDraftingNote || !latestVisit}
+                  title={!latestVisit ? "Record an interaction first" : "Draft an admission note from the latest visit"}
+                  className="rounded-lg border px-3.5 py-1.5 text-sm font-bold transition-colors hover:bg-slate-50 disabled:opacity-50"
+                  style={{ borderColor: "var(--border-strong)", color: "var(--text-2)" }}
                 >
-                  Edit record
+                  {isDraftingNote ? "Drafting…" : "Admission note"}
                 </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => requestNavigation(exitEditMode)}
-                    disabled={isPublishing}
-                    className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => publish()}
-                    disabled={isPublishing || !hasUnsavedChanges}
-                    title={
-                      !hasUnsavedChanges
-                        ? "No changes to publish"
-                        : "Publish changes to this record"
-                    }
-                    className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60"
-                  >
-                    {isPublishing ? "Publishing…" : "Publish changes"}
-                  </button>
-                </>
-              )}
-              <button
-                onClick={draftAdmissionNote}
-                disabled={isDraftingNote || !latestVisit}
-                title={
-                  !latestVisit
-                    ? "Record an interaction first"
-                    : "Draft an admission note from the latest visit"
-                }
-                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
-              >
-                {isDraftingNote ? "Drafting…" : "Draft Admission Note"}
-              </button>
-              <button
-                onClick={() => requestNavigation(() => setIsChatOpen((o) => !o))}
-                disabled={!data?.patient}
-                className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
-              >
-                {isChatOpen ? "Close chat" : "Ask AI"}
-              </button>
-              <button
-                onClick={() => requestNavigation(startRecording)}
-                disabled={isStartingVisit || !data?.patient}
-                className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60"
-              >
-                {isStartingVisit ? "Starting…" : "Record Interaction"}
-              </button>
+                <button
+                  onClick={() => requestNavigation(() => setIsChatOpen((o) => !o))}
+                  disabled={!data?.patient}
+                  className="rounded-lg border px-3.5 py-1.5 text-sm font-bold transition-colors hover:bg-slate-50 disabled:opacity-50"
+                  style={{ borderColor: "var(--border-strong)", color: "var(--text-2)" }}
+                >
+                  {isChatOpen ? "Close AI" : "Ask AI"}
+                </button>
+                <button
+                  onClick={() => requestNavigation(startRecording)}
+                  disabled={isStartingVisit || !data?.patient}
+                  className="rounded-lg px-3.5 py-1.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ background: "var(--accent)" }}
+                >
+                  {isStartingVisit ? "Starting…" : "Record interaction"}
+                </button>
+              </div>
             </div>
-          </div>
-          {publishError && (
-            <div className="mx-auto w-full max-w-[1600px] px-4 pb-3 text-sm text-red-700">
-              {publishError}
-            </div>
-          )}
-        </header>
+            {publishError && (
+              <div className="px-6 pb-3 text-sm" style={{ color: "#dc2626" }}>
+                {publishError}
+              </div>
+            )}
+          </header>
 
-        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-4">
-          {isLoading ? (
-            <div className="text-center text-sm text-zinc-500">Loading…</div>
-          ) : error ? (
-            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          ) : data?.patient ? (
-            <Bento
-              data={data}
-              onChange={loadPatient}
-              isEditing={isEditing}
-              draftState={draftState}
-              onTextFieldChange={updateDraftField}
-              onOpenEditor={setOpenEditor}
-              changeCounts={changeCounts}
-              onOpenHistory={setHistoryField}
-            />
-          ) : null}
-        </main>
+          <main className="flex-1 px-6 py-5">
+            {isLoading ? (
+              <div className="text-center text-sm" style={{ color: "var(--text-3)" }}>Loading…</div>
+            ) : error ? (
+              <div className="rounded-lg px-4 py-3 text-sm" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }}>
+                {error}
+              </div>
+            ) : data?.patient ? (
+              <Bento
+                data={data}
+                onChange={loadPatient}
+                isEditing={isEditing}
+                draftState={draftState}
+                onTextFieldChange={updateDraftField}
+                onOpenEditor={setOpenEditor}
+                changeCounts={changeCounts}
+                onOpenHistory={setHistoryField}
+              />
+            ) : null}
+          </main>
+        </div>
       </div>
 
       <ChatSidebar
@@ -640,16 +640,20 @@ function ChatSidebar({
   return (
     <aside
       aria-hidden={!open}
-      className={`fixed right-0 top-0 z-40 flex h-full w-full max-w-[420px] flex-col overflow-hidden border-l border-zinc-200 bg-white shadow-xl transition-transform duration-200 ${
+      className={`fixed right-0 top-0 z-40 flex h-full w-full max-w-[420px] flex-col overflow-hidden shadow-xl transition-transform duration-200 ${
         open ? "translate-x-0" : "translate-x-full"
       }`}
+      style={{ background: "var(--surface)", borderLeft: "1px solid var(--border)" }}
     >
-      <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+      <header
+        className="flex items-center justify-between px-4 py-3 border-b"
+        style={{ borderColor: "var(--border)" }}
+      >
         <div className="min-w-0">
-          <div className="text-xs uppercase tracking-wide text-zinc-500">
+          <div className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
             Ask AI
           </div>
-          <div className="truncate font-medium text-zinc-900">
+          <div className="truncate font-bold" style={{ color: "var(--text-1)" }}>
             {patientName || "Patient"}
           </div>
         </div>
@@ -660,7 +664,8 @@ function ChatSidebar({
             disabled={isSending || (messages.length === 0 && !input)}
             aria-label="Start new chat"
             title="New chat"
-            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
+            className="rounded-lg p-1.5 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            style={{ color: "var(--text-3)" }}
           >
             <svg
               width="18"
@@ -680,7 +685,8 @@ function ChatSidebar({
             type="button"
             onClick={onClose}
             aria-label="Close chat"
-            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900"
+            className="rounded-lg p-1.5 transition-colors hover:bg-slate-100"
+            style={{ color: "var(--text-3)" }}
           >
             <svg
               width="18"
@@ -702,13 +708,13 @@ function ChatSidebar({
         className="flex-1 overflow-y-auto px-4 py-3"
       >
         {isLoadingHistory ? (
-          <p className="mt-6 text-center text-sm text-zinc-400">
+          <p className="mt-6 text-center text-sm" style={{ color: "var(--text-3)" }}>
             Loading conversation…
           </p>
         ) : messages.length === 0 ? (
-          <div className="mt-10 flex flex-col items-center px-4 text-center text-sm text-zinc-400">
-            <p className="text-zinc-500">Ask anything about this patient.</p>
-            <p className="mt-2 text-xs leading-5">
+          <div className="mt-10 flex flex-col items-center px-4 text-center">
+            <p className="text-sm font-bold" style={{ color: "var(--text-2)" }}>Ask anything about this patient.</p>
+            <p className="mt-2 text-xs leading-5" style={{ color: "var(--text-3)" }}>
               Answers are grounded in the structured record, uploaded documents,
               and visit transcripts. Nothing is invented.
             </p>
@@ -716,19 +722,13 @@ function ChatSidebar({
         ) : (
           <ul className="space-y-3">
             {messages.map((m, i) => (
-              <li
-                key={i}
-                className={
-                  m.role === "user"
-                    ? "flex justify-end"
-                    : "flex justify-start"
-                }
-              >
+              <li key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                 <div
-                  className={
+                  className="max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6"
+                  style={
                     m.role === "user"
-                      ? "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-zinc-900 px-3 py-2 text-sm leading-6 text-white"
-                      : "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-zinc-100 px-3 py-2 text-sm leading-6 text-zinc-800"
+                      ? { background: "var(--accent)", color: "white", borderBottomRightRadius: "4px" }
+                      : { background: "var(--bg)", color: "var(--text-1)", borderBottomLeftRadius: "4px", border: "1px solid var(--border)" }
                   }
                 >
                   {m.content}
@@ -737,7 +737,7 @@ function ChatSidebar({
             ))}
             {isSending && (
               <li className="flex justify-start">
-                <div className="rounded-2xl rounded-bl-sm bg-zinc-100 px-3 py-2 text-sm italic text-zinc-500">
+                <div className="rounded-2xl px-3 py-2 text-sm italic" style={{ background: "var(--bg)", color: "var(--text-3)", borderBottomLeftRadius: "4px", border: "1px solid var(--border)" }}>
                   Thinking…
                 </div>
               </li>
@@ -747,17 +747,15 @@ function ChatSidebar({
       </div>
 
       {error && (
-        <p className="border-t border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">
+        <p className="px-4 py-2 text-xs border-t" style={{ background: "#fef2f2", borderColor: "#fecaca", color: "#dc2626" }}>
           {error}
         </p>
       )}
 
       <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-        className="flex items-end gap-2 border-t border-zinc-200 p-3"
+        onSubmit={(e) => { e.preventDefault(); send(); }}
+        className="flex items-end gap-2 p-3 border-t"
+        style={{ borderColor: "var(--border)" }}
       >
         <textarea
           ref={inputRef}
@@ -767,12 +765,14 @@ function ChatSidebar({
           placeholder="Ask about this patient…"
           rows={1}
           disabled={isSending}
-          className="max-h-32 flex-1 resize-none rounded-md border border-zinc-200 px-3 py-2 text-sm leading-5 text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none disabled:opacity-60"
+          className="max-h-32 flex-1 resize-none rounded-lg px-3 py-2 text-sm leading-5 outline-none disabled:opacity-60"
+          style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)", background: "var(--bg)" }}
         />
         <button
           type="submit"
           disabled={isSending || !input.trim()}
-          className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40"
+          className="shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ background: "var(--accent)" }}
         >
           Send
         </button>
@@ -789,16 +789,18 @@ function ChatSidebar({
           }}
         >
           <div
-            className="w-full max-w-[320px] rounded-xl border border-zinc-200 bg-white p-4 shadow-xl"
+            className="w-full max-w-[320px] rounded-xl p-4"
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 8px 32px rgba(15,23,42,0.12)",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3
-              id="clear-chat-title"
-              className="text-sm font-semibold text-zinc-900"
-            >
+            <h3 id="clear-chat-title" className="text-sm font-bold" style={{ color: "var(--text-1)" }}>
               Start a new chat?
             </h3>
-            <p className="mt-1 text-xs leading-5 text-zinc-600">
+            <p className="mt-1 text-xs leading-5" style={{ color: "var(--text-2)" }}>
               Your saved chat history for this patient will be deleted. This
               cannot be undone.
             </p>
@@ -807,7 +809,8 @@ function ChatSidebar({
                 type="button"
                 onClick={() => setShowClearConfirm(false)}
                 disabled={isClearing}
-                className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50"
+                className="rounded-lg px-3 py-1.5 text-sm font-bold transition-colors hover:bg-slate-100 disabled:opacity-50"
+                style={{ color: "var(--text-2)" }}
               >
                 Cancel
               </button>
@@ -816,7 +819,8 @@ function ChatSidebar({
                 onClick={confirmClearChat}
                 disabled={isClearing}
                 autoFocus
-                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
+                className="rounded-lg px-3 py-1.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                style={{ background: "#dc2626" }}
               >
                 {isClearing ? "Clearing…" : "Clear chat"}
               </button>
@@ -1008,7 +1012,8 @@ function BentoCard({
 }) {
   return (
     <section
-      className={`flex h-full flex-col rounded-xl bg-white p-4 shadow-sm ring-1 ring-zinc-200 ${className}`}
+      className={`flex h-full flex-col rounded-xl p-4 ${className}`}
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
     >
       {children}
     </section>
@@ -1026,7 +1031,7 @@ function CardHeader({
 }) {
   return (
     <div className={`mb-2 flex items-center justify-between gap-2 ${className}`}>
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
         {title}
       </h2>
       {action}
@@ -1035,7 +1040,7 @@ function CardHeader({
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <p className="text-sm italic text-zinc-400">{children}</p>;
+  return <p className="text-sm italic" style={{ color: "var(--text-3)" }}>{children}</p>;
 }
 
 function EditFieldButton({ onClick }: { onClick: () => void }) {
@@ -1043,7 +1048,8 @@ function EditFieldButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50"
+      className="rounded-md px-2 py-0.5 text-[11px] font-bold transition-colors hover:bg-slate-100"
+      style={{ border: "1px solid var(--border-strong)", color: "var(--text-2)" }}
     >
       Edit
     </button>
@@ -1072,7 +1078,8 @@ function HistoryButton({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-bold transition-colors hover:bg-slate-100"
+      style={{ border: "1px solid var(--border-strong)", color: "var(--text-2)" }}
     >
       <svg
         width="12"
@@ -1116,27 +1123,34 @@ function PatientHeaderCard({
   if (patient.height_cm) meta.push(formatHeight(patient.height_cm));
   meta.push(`admitted ${new Date(patient.admitted_at).toLocaleDateString()}`);
   return (
-    <section className="flex h-full flex-col rounded-xl bg-gradient-to-br from-white to-zinc-50 p-3 shadow-sm ring-1 ring-zinc-200">
+    <section
+      className="flex h-full flex-col rounded-xl p-4"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
       <div className="flex items-start gap-4">
         {patient.photo_data ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={patient.photo_data}
             alt={patient.name}
-            className="h-44 w-44 shrink-0 rounded-xl object-cover ring-1 ring-zinc-200"
+            className="h-44 w-44 shrink-0 rounded-xl object-cover"
+            style={{ border: "1px solid var(--border)" }}
           />
         ) : (
-          <div className="flex h-44 w-44 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-3xl font-semibold text-zinc-500">
+          <div
+            className="flex h-44 w-44 shrink-0 items-center justify-center rounded-xl text-3xl font-bold"
+            style={{ background: "var(--accent-light)", color: "var(--accent-text)" }}
+          >
             {initials(patient.name)}
           </div>
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
+              <h1 className="text-3xl font-bold tracking-tight" style={{ color: "var(--text-1)" }}>
                 {patient.name}
               </h1>
-              <p className="mt-1 text-sm text-zinc-500">{meta.join(" · ")}</p>
+              <p className="mt-1 text-sm" style={{ color: "var(--text-2)" }}>{meta.join(" · ")}</p>
             </div>
             {historyAction}
           </div>
@@ -1146,12 +1160,17 @@ function PatientHeaderCard({
               onChange={(e) => onSynopsisChange(e.target.value || null)}
               placeholder="Synopsis (clinical one-liner)"
               rows={3}
-              className="mt-3 w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-base leading-7 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+              className="mt-3 w-full resize-y rounded-lg px-3 py-2 text-base leading-7 outline-none"
+              style={{
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-1)",
+                background: "var(--bg)",
+              }}
             />
           ) : synopsis ? (
-            <p className="mt-3 text-base leading-7 text-zinc-700">{synopsis}</p>
+            <p className="mt-3 text-base leading-7" style={{ color: "var(--text-2)" }}>{synopsis}</p>
           ) : (
-            <p className="mt-3 text-sm italic text-zinc-400">
+            <p className="mt-3 text-sm italic" style={{ color: "var(--text-3)" }}>
               Synopsis will appear here after the first visit.
             </p>
           )}
@@ -1163,16 +1182,19 @@ function PatientHeaderCard({
 
 function ChangedCard({ narrative }: { narrative: string | null }) {
   return (
-    <section className="flex h-full flex-col rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm ring-1 ring-amber-100">
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">
+    <section
+      className="flex h-full flex-col rounded-xl p-5"
+      style={{ background: "#fffbeb", border: "1px solid #fde68a" }}
+    >
+      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: "#92400e" }}>
         What&rsquo;s changed since you last saw this patient
       </h2>
       {narrative ? (
-        <p className="whitespace-pre-wrap text-sm leading-6 text-amber-950">
+        <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: "#78350f" }}>
           {narrative}
         </p>
       ) : (
-        <p className="text-sm italic text-amber-900/80">
+        <p className="text-sm italic" style={{ color: "#a16207" }}>
           Nothing new since your last visit.
         </p>
       )}
@@ -1208,17 +1230,27 @@ function ModalFrame({
       role="dialog"
       aria-modal="true"
       aria-labelledby="editor-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4 py-8 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8"
+      style={{ background: "rgba(15,23,42,0.4)" }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-zinc-200"
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl"
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          boxShadow: "0 20px 60px rgba(15,23,42,0.15)",
+        }}
       >
-        <div className="flex items-center justify-between gap-4 border-b border-zinc-200 px-5 py-3">
+        <div
+          className="flex items-center justify-between gap-4 px-5 py-4 border-b"
+          style={{ borderColor: "var(--border)" }}
+        >
           <h2
             id="editor-modal-title"
-            className="text-base font-semibold text-zinc-900"
+            className="text-base font-bold"
+            style={{ color: "var(--text-1)" }}
           >
             {title}
           </h2>
@@ -1226,25 +1258,21 @@ function ModalFrame({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900"
+            className="rounded-lg p-1.5 transition-colors hover:bg-slate-100"
+            style={{ color: "var(--text-3)" }}
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M3 3l12 12M15 3L3 15" />
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M2 2l12 12M14 2L2 14" />
             </svg>
           </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
           {children}
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-5 py-3">
+        <div
+          className="flex items-center justify-end gap-2 px-5 py-3 border-t"
+          style={{ borderColor: "var(--border)", background: "#f8fafc" }}
+        >
           {footer}
         </div>
       </div>
@@ -1268,7 +1296,8 @@ function ModalFooterButtons({
       <button
         type="button"
         onClick={onCancel}
-        className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100"
+        className="rounded-lg px-3.5 py-1.5 text-sm font-bold transition-colors hover:bg-slate-100"
+        style={{ color: "var(--text-2)" }}
       >
         Cancel
       </button>
@@ -1277,7 +1306,8 @@ function ModalFooterButtons({
         onClick={onSave}
         disabled={saveDisabled}
         title={saveTitle}
-        className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60"
+        className="rounded-lg px-3.5 py-1.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+        style={{ background: "var(--accent)" }}
       >
         Save
       </button>
@@ -1341,7 +1371,7 @@ function VitalsEditModal({
         />
       }
     >
-      <p className="mb-2 text-xs text-zinc-500">
+      <p className="mb-2 text-xs" style={{ color: "var(--text-3)" }}>
         Edit the raw JSON. Changes only apply to your draft when you click
         Save — Cancel discards them.
       </p>
@@ -1354,7 +1384,8 @@ function VitalsEditModal({
           '{"bp": "...", "hr": "...", "temp_c": "...", "o2_sat": "...", "taken_at": "..."}'
         }
         autoFocus
-        className="min-h-[280px] flex-1 resize-y rounded-md border border-zinc-300 px-2 py-1.5 font-mono text-xs leading-5 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+        className="min-h-[280px] flex-1 resize-y rounded-lg px-2 py-1.5 font-mono text-xs leading-5 outline-none"
+        style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)", background: "var(--bg)" }}
       />
       {error && (
         <p className="mt-1 text-xs text-red-600">JSON error: {error}</p>
@@ -1434,19 +1465,19 @@ function MedicationsEditModal({
               value={med.name}
               onChange={(e) => updateRow(i, { name: e.target.value })}
               placeholder="Metformin"
-              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+              className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
             />
             <input
               value={med.dose}
               onChange={(e) => updateRow(i, { dose: e.target.value })}
               placeholder="500 mg"
-              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+              className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
             />
             <input
               value={med.frequency}
               onChange={(e) => updateRow(i, { frequency: e.target.value })}
               placeholder="Twice daily"
-              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+              className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
             />
             <button
               type="button"
@@ -1471,7 +1502,7 @@ function MedicationsEditModal({
         <button
           type="button"
           onClick={addRow}
-          className="mt-1 self-start rounded-md border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50"
+          className="mt-1 self-start rounded-lg px-3 py-1.5 text-xs font-bold transition-colors hover:bg-slate-50" style={{ border: "1px dashed var(--border-strong)", color: "var(--text-2)" }}
         >
           + Add medication
         </button>
@@ -1530,19 +1561,19 @@ function ProblemsEditModal({
       </p>
       <div className="flex flex-col gap-3">
         {list.map((dx, i) => (
-          <div key={i} className="rounded-md border border-zinc-200 p-3">
+          <div key={i} className="rounded-lg p-3" style={{ border: "1px solid var(--border)" }}>
             <div className="grid grid-cols-[1.4fr_1fr_auto] items-center gap-2">
               <input
                 value={dx.condition}
                 onChange={(e) => updateRow(i, { condition: e.target.value })}
                 placeholder="Condition"
-                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm font-medium text-zinc-900 focus:border-zinc-500 focus:outline-none"
+                className="rounded-lg px-2 py-1.5 text-sm font-bold outline-none" style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
               />
               <input
                 value={dx.since}
                 onChange={(e) => updateRow(i, { since: e.target.value })}
                 placeholder="Since (e.g. 2018)"
-                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+                className="rounded-lg px-2 py-1.5 text-sm outline-none" style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
               />
               <button
                 type="button"
@@ -1568,14 +1599,14 @@ function ProblemsEditModal({
               onChange={(e) => updateRow(i, { notes: e.target.value })}
               placeholder="Notes"
               rows={2}
-              className="mt-2 w-full resize-y rounded-md border border-zinc-300 px-2 py-1.5 text-sm leading-6 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+              className="mt-2 w-full resize-y rounded-lg px-2 py-1.5 text-sm leading-6 outline-none" style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
             />
           </div>
         ))}
         <button
           type="button"
           onClick={addRow}
-          className="mt-1 self-start rounded-md border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50"
+          className="mt-1 self-start rounded-lg px-3 py-1.5 text-xs font-bold transition-colors hover:bg-slate-50" style={{ border: "1px dashed var(--border-strong)", color: "var(--text-2)" }}
         >
           + Add problem
         </button>
@@ -1609,19 +1640,19 @@ function ProblemsCard({
       {diagnoses.length === 0 ? (
         <Empty>No active problems.</Empty>
       ) : (
-        <ul className="divide-y divide-zinc-100 text-sm">
+        <ul className="divide-y text-sm" style={{ borderColor: "var(--border)" }}>
           {diagnoses.map((d, i) => (
             <li key={i} className="py-2 first:pt-0 last:pb-0">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium text-zinc-900">{d.condition}</span>
+                <span className="font-bold" style={{ color: "var(--text-1)" }}>{d.condition}</span>
                 {d.since && (
-                  <span className="shrink-0 text-xs text-zinc-500">
+                  <span className="shrink-0 text-xs" style={{ color: "var(--text-3)" }}>
                     since {d.since}
                   </span>
                 )}
               </div>
               {d.notes && (
-                <p className="mt-1 text-sm leading-6 text-zinc-600">
+                <p className="mt-1 text-sm leading-6" style={{ color: "var(--text-2)" }}>
                   {d.notes}
                 </p>
               )}
@@ -1658,14 +1689,14 @@ function MedicationsCard({
       {medications.length === 0 ? (
         <Empty>No medications recorded.</Empty>
       ) : (
-        <ul className="divide-y divide-zinc-100 text-sm">
+        <ul className="divide-y text-sm" style={{ borderColor: "var(--border)" }}>
           {medications.map((m, i) => (
             <li
               key={i}
               className="flex items-baseline justify-between gap-3 py-2 first:pt-0 last:pb-0"
             >
-              <span className="font-medium text-zinc-900">{m.name}</span>
-              <span className="text-right text-xs text-zinc-500">
+              <span className="font-bold" style={{ color: "var(--text-1)" }}>{m.name}</span>
+              <span className="text-right text-xs" style={{ color: "var(--text-3)" }}>
                 {[m.dose, m.frequency].filter(Boolean).join(" · ") || "—"}
               </span>
             </li>
@@ -1703,10 +1734,11 @@ function TextCard({
           value={content}
           onChange={(e) => onChange(e.target.value || null)}
           placeholder={emptyText}
-          className="min-h-[120px] flex-1 resize-y rounded-md border border-zinc-300 px-2 py-1.5 text-sm leading-6 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+          className="min-h-[120px] flex-1 resize-y rounded-lg px-2 py-1.5 text-sm leading-6 outline-none"
+          style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)", background: "var(--bg)" }}
         />
       ) : content ? (
-        <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-700">
+        <p className="whitespace-pre-wrap text-sm leading-6" style={{ color: "var(--text-2)" }}>
           {content}
         </p>
       ) : (
@@ -1776,13 +1808,14 @@ function VitalsCard({
         {cards.map((c) => (
           <div
             key={c.label}
-            className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 ring-1 ring-zinc-100"
+            className="flex items-center justify-between gap-2 rounded-lg px-3 py-2"
+            style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
           >
             <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-wide text-zinc-500">
+              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
                 {c.label}
               </div>
-              <div className="text-base font-semibold tabular-nums leading-tight text-zinc-900">
+              <div className="text-base font-bold tabular-nums leading-tight" style={{ color: "var(--text-1)" }}>
                 {c.value}
               </div>
             </div>
@@ -1809,28 +1842,27 @@ function LabsCard({ labs }: { labs: Lab[] }) {
       <CardHeader
         title={`Labs · ${abnormalCount} abnormal`}
       />
-      <ul className="min-h-0 flex-1 divide-y divide-zinc-100 overflow-hidden text-sm">
+      <ul className="min-h-0 flex-1 divide-y overflow-hidden text-sm" style={{ borderColor: "var(--border)" }}>
         {labs.map((l) => (
           <li
             key={l.name}
             className="flex items-center justify-between gap-2 py-1.5"
           >
-            <span className="w-24 shrink-0 text-zinc-600">{l.name}</span>
+            <span className="w-24 shrink-0" style={{ color: "var(--text-2)" }}>{l.name}</span>
             <span
-              className={`flex-1 truncate text-right tabular-nums ${
-                l.abnormal ? "font-semibold text-rose-600" : "text-zinc-900"
-              }`}
+              className="flex-1 truncate text-right tabular-nums font-bold"
+              style={{ color: l.abnormal ? "#dc2626" : "var(--text-1)" }}
             >
               {l.value} {l.unit}
             </span>
-            <span className="hidden w-16 shrink-0 text-right text-xs text-zinc-400 sm:block">
+            <span className="hidden w-16 shrink-0 text-right text-xs sm:block" style={{ color: "var(--text-3)" }}>
               {l.range}
             </span>
             <Sparkline
               values={l.trend}
               width={48}
               height={18}
-              className={l.abnormal ? "text-rose-500" : "text-zinc-400"}
+              className={l.abnormal ? "text-rose-500" : "text-slate-400"}
             />
           </li>
         ))}
@@ -1850,7 +1882,7 @@ function VisitHistoryCard({ visits }: { visits: Visit[] }) {
       {visits.length === 0 ? (
         <Empty>No prior visits recorded.</Empty>
       ) : (
-        <ul className="divide-y divide-zinc-100">
+        <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
           {visits.map((v) => (
             <VisitRow key={v.id} visit={v} />
           ))}
@@ -1875,16 +1907,12 @@ function VisitRow({ visit }: { visit: Visit }) {
         onClick={() => setExpanded((o) => !o)}
         className="flex w-full items-baseline justify-between gap-3 text-left"
       >
-        <span className="truncate font-medium text-zinc-900">
+        <span className="truncate font-bold" style={{ color: "var(--text-1)" }}>
           {visit.doctor_name}
         </span>
-        <span className="flex shrink-0 items-center gap-2 text-xs text-zinc-500">
+        <span className="flex shrink-0 items-center gap-2 text-xs" style={{ color: "var(--text-2)" }}>
           {date}
-          <span
-            className={`text-zinc-400 transition-transform ${
-              expanded ? "rotate-180" : ""
-            }`}
-          >
+          <span className={`transition-transform ${expanded ? "rotate-180" : ""}`} style={{ color: "var(--text-3)" }}>
             ▾
           </span>
         </span>
@@ -1892,13 +1920,11 @@ function VisitRow({ visit }: { visit: Visit }) {
       {expanded && (
         <div className="mt-2">
           {visit.summary ? (
-            <p className="text-sm leading-6 text-zinc-700">{visit.summary}</p>
+            <p className="text-sm leading-6" style={{ color: "var(--text-2)" }}>{visit.summary}</p>
           ) : visit.transcript ? (
-            <p className="text-xs italic text-zinc-400">
-              No summary available for this visit.
-            </p>
+            <p className="text-xs italic" style={{ color: "var(--text-3)" }}>No summary available for this visit.</p>
           ) : (
-            <p className="text-xs italic text-zinc-400">No transcript saved.</p>
+            <p className="text-xs italic" style={{ color: "var(--text-3)" }}>No transcript saved.</p>
           )}
         </div>
       )}
@@ -1939,25 +1965,26 @@ function NoteModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4 py-8"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8"
+      style={{ background: "rgba(15,23,42,0.4)" }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-zinc-200"
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 20px 60px rgba(15,23,42,0.15)" }}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-3">
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Draft note</h2>
-            <p className="text-xs text-zinc-500">
-              {doctorName} · {date}
-            </p>
+            <h2 className="text-base font-bold" style={{ color: "var(--text-1)" }}>Draft note</h2>
+            <p className="text-xs" style={{ color: "var(--text-3)" }}>{doctorName} · {date}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={copy}
-              className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-lg px-3 py-1.5 text-xs font-bold transition-colors hover:bg-slate-100"
+              style={{ border: "1px solid var(--border-strong)", color: "var(--text-2)" }}
             >
               {copied ? "Copied!" : "Copy"}
             </button>
@@ -1965,23 +1992,16 @@ function NoteModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="text-zinc-400 transition hover:text-zinc-900"
+              className="rounded-lg p-1.5 transition-colors hover:bg-slate-100"
+              style={{ color: "var(--text-3)" }}
             >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 18 18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              >
-                <path d="M3 3l12 12M15 3L3 15" />
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M2 2l12 12M14 2L2 14" />
               </svg>
             </button>
           </div>
         </div>
-        <pre className="flex-1 overflow-auto whitespace-pre-wrap px-5 py-4 font-mono text-sm leading-6 text-zinc-900">
+        <pre className="flex-1 overflow-auto whitespace-pre-wrap px-5 py-4 font-mono text-sm leading-6" style={{ color: "var(--text-1)" }}>
           {note}
         </pre>
       </div>
@@ -2017,19 +2037,19 @@ function UnsavedChangesModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="unsaved-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4 backdrop-blur-[2px]"
-      onClick={() => {
-        if (!isPublishing) onStay();
-      }}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ background: "rgba(15,23,42,0.4)" }}
+      onClick={() => { if (!isPublishing) onStay(); }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[400px] rounded-xl border border-zinc-200 bg-white p-5 shadow-xl"
+        className="w-full max-w-[400px] rounded-2xl p-5"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "0 20px 60px rgba(15,23,42,0.15)" }}
       >
-        <h3 id="unsaved-title" className="text-base font-semibold text-zinc-900">
+        <h3 id="unsaved-title" className="text-base font-bold" style={{ color: "var(--text-1)" }}>
           You have unsaved changes
         </h3>
-        <p className="mt-2 text-sm leading-6 text-zinc-600">
+        <p className="mt-2 text-sm leading-6" style={{ color: "var(--text-2)" }}>
           You haven&apos;t published your edits to this patient&apos;s record.
           What would you like to do?
         </p>
@@ -2039,7 +2059,8 @@ function UnsavedChangesModal({
             onClick={onSaveAndContinue}
             disabled={isPublishing}
             autoFocus
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60"
+            className="rounded-lg px-3 py-2 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            style={{ background: "var(--accent)" }}
           >
             {isPublishing ? "Publishing…" : "Save & continue"}
           </button>
@@ -2047,7 +2068,8 @@ function UnsavedChangesModal({
             type="button"
             onClick={onDiscardAndContinue}
             disabled={isPublishing}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
+            className="rounded-lg px-3 py-2 text-sm font-bold transition-colors hover:bg-slate-50 disabled:opacity-50"
+            style={{ border: "1px solid var(--border-strong)", color: "var(--text-2)" }}
           >
             Discard & continue
           </button>
@@ -2055,7 +2077,8 @@ function UnsavedChangesModal({
             type="button"
             onClick={onStay}
             disabled={isPublishing}
-            className="rounded-md px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-50"
+            className="rounded-lg px-3 py-2 text-sm font-bold transition-colors hover:bg-slate-100 disabled:opacity-50"
+            style={{ color: "var(--text-2)" }}
           >
             Stay on page
           </button>
@@ -2143,7 +2166,8 @@ function DocumentsCard({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy}
-            className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+            className="rounded-lg px-2.5 py-1 text-xs font-bold transition-colors hover:bg-slate-100 disabled:opacity-60"
+            style={{ border: "1px solid var(--border-strong)", color: "var(--text-2)" }}
           >
             {busy ? "Uploading…" : "+ Upload"}
           </button>
@@ -2159,7 +2183,7 @@ function DocumentsCard({
       {documents.length === 0 ? (
         <Empty>No documents uploaded yet.</Empty>
       ) : (
-        <ul className="divide-y divide-zinc-100 text-sm">
+        <ul className="divide-y text-sm" style={{ borderColor: "var(--border)" }}>
           {documents.map((doc) => (
             <li
               key={doc.id}
@@ -2169,18 +2193,20 @@ function DocumentsCard({
               <button
                 type="button"
                 onClick={() => handleView(doc)}
-                className="min-w-0 flex-1 truncate text-left font-medium text-zinc-900 hover:text-zinc-600 hover:underline"
+                className="min-w-0 flex-1 truncate text-left font-bold hover:underline"
+                style={{ color: "var(--text-1)" }}
               >
                 {doc.filename}
               </button>
-              <span className="shrink-0 text-xs text-zinc-500">
+              <span className="shrink-0 text-xs" style={{ color: "var(--text-3)" }}>
                 {new Date(doc.uploaded_at).toLocaleDateString()}
               </span>
               <button
                 type="button"
                 onClick={() => handleDelete(doc)}
                 aria-label={`Delete ${doc.filename}`}
-                className="shrink-0 text-zinc-300 opacity-0 transition group-hover:opacity-100 hover:text-red-600"
+                className="shrink-0 opacity-0 transition group-hover:opacity-100 hover:text-red-600"
+                style={{ color: "var(--text-3)" }}
               >
                 <svg
                   width="14"
@@ -2211,7 +2237,7 @@ function DocIcon() {
       fill="none"
       stroke="currentColor"
       strokeWidth="1.5"
-      className="shrink-0 text-zinc-400"
+      className="shrink-0" style={{ color: "var(--text-3)" }}
     >
       <path d="M3 1.5h6.5L13 5v9.5H3z" />
       <path d="M9.5 1.5V5H13" />

@@ -183,6 +183,23 @@ UPDATE_PATIENT_STATE_TOOL = {
                     "required": ["category", "text"],
                 },
             },
+            "completed_plan_item_ids": {
+                "type": "array",
+                "description": (
+                    "IDs of items from EXISTING_PLAN_ITEMS that the transcript "
+                    "clearly indicates have been COMPLETED this visit. Be "
+                    "CONSERVATIVE — only include an item when the doctor used "
+                    "explicit completed-action language: 'we did', 'we ran', "
+                    "'I stopped', 'started her on', 'switched to', 'ordered', "
+                    "'reviewed', 'discussed', 'discharged'. Future-tense "
+                    "('we'll'/'going to'/'plan to') or hedged ('let's think "
+                    "about'/'might') statements DO NOT count. If unsure, leave "
+                    "it out — doctors will mark it manually. Only IDs present "
+                    "verbatim in EXISTING_PLAN_ITEMS are valid. Empty array if "
+                    "nothing was clearly completed."
+                ),
+                "items": {"type": "string"},
+            },
         },
         "required": [
             "synopsis",
@@ -193,6 +210,7 @@ UPDATE_PATIENT_STATE_TOOL = {
             "recent_vitals",
             "long_term_goals",
             "plan_items",
+            "completed_plan_item_ids",
         ],
     },
 }
@@ -202,23 +220,30 @@ def extract_patient_state(current_state, transcript, existing_plan_items=None):
     """
     Run the unified extractor.
 
-    Returns a tuple `(state, plan_items)`:
-      - `state`   — dict with the keys in STATE_FIELDS (writable to patient_state).
-      - `plan_items` — list of {category, text} dicts of NEW plan items the
+    Returns a tuple `(state, plan_items, completed_ids)`:
+      - `state`         — dict with the keys in STATE_FIELDS (writable to patient_state).
+      - `plan_items`    — list of {category, text} dicts of NEW plan items the
         doctor articulated this visit (caller is responsible for inserting
         them into patient_plan_items, append-only).
+      - `completed_ids` — list of plan_item IDs the transcript clearly indicates
+        were completed (caller toggles them done with done_source='ai').
 
     `existing_plan_items` is passed to the model so it doesn't re-emit items
-    already on the patient's plan.
+    already on the patient's plan AND so it can flag any that were completed.
     """
     base = state_subset(current_state)
     if not anthropic_client or not transcript.strip():
-        return base, []
+        return base, [], []
     existing_for_prompt = [
-        {"category": p.get("category"), "text": p.get("text")}
+        {
+            "id": p.get("id"),
+            "category": p.get("category"),
+            "text": p.get("text"),
+        }
         for p in (existing_plan_items or [])
-        if not p.get("done")
+        if not p.get("done") and p.get("id")
     ]
+    valid_existing_ids = {p["id"] for p in existing_for_prompt}
     response = anthropic_client.messages.create(
         model=LLM_MODEL,
         max_tokens=2000,
@@ -237,7 +262,13 @@ def extract_patient_state(current_state, transcript, existing_plan_items=None):
             "PLAN ITEMS are append-only. Re-read EXISTING_PLAN_ITEMS carefully and "
             "do NOT emit anything that's already covered there — those items are "
             "still in effect. Only emit genuinely new actions the doctor decided "
-            "this visit."
+            "this visit.\n\n"
+            "COMPLETED PLAN ITEMS: also flag any EXISTING_PLAN_ITEMS that the "
+            "transcript clearly shows were carried out THIS visit. Use ONLY the "
+            "id field provided. Be conservative — require explicit completed-"
+            "action language ('we ran', 'I stopped', 'switched to', 'ordered'). "
+            "Future-tense or hedged statements do NOT count. When in doubt, "
+            "leave the item out and let the doctor check it manually."
         ),
         tools=[UPDATE_PATIENT_STATE_TOOL],
         tool_choice={"type": "tool", "name": "update_patient_state"},
@@ -246,7 +277,7 @@ def extract_patient_state(current_state, transcript, existing_plan_items=None):
                 "role": "user",
                 "content": (
                     f"CURRENT_STATE:\n{json.dumps(base, indent=2)}\n\n"
-                    f"EXISTING_PLAN_ITEMS:\n{json.dumps(existing_for_prompt, indent=2)}\n\n"
+                    f"EXISTING_PLAN_ITEMS:\n{json.dumps(existing_for_prompt, indent=2, default=str)}\n\n"
                     f"TRANSCRIPT:\n{transcript}"
                 ),
             }
@@ -256,8 +287,13 @@ def extract_patient_state(current_state, transcript, existing_plan_items=None):
         if block.type == "tool_use" and block.name == "update_patient_state":
             output = block.input or {}
             plan_items = output.pop("plan_items", []) or []
-            return output, plan_items
-    return base, []
+            completed_ids = output.pop("completed_plan_item_ids", []) or []
+            # Defensively keep only IDs that were actually open on this patient.
+            completed_ids = [
+                cid for cid in completed_ids if str(cid) in {str(x) for x in valid_existing_ids}
+            ]
+            return output, plan_items, completed_ids
+    return base, [], []
 
 
 def summarize_visit(transcript):
@@ -783,7 +819,13 @@ def update_plan_item(patient_id, item_id):
             return jsonify({"error": "text cannot be empty"}), 400
         payload["text"] = text
     if "done" in body:
-        payload["done"] = bool(body.get("done"))
+        is_done = bool(body.get("done"))
+        payload["done"] = is_done
+        # Manual toggle is always attributed to the user. Clearing done also
+        # clears the AI-completion provenance so the badge goes away.
+        payload["done_source"] = "user" if is_done else None
+        if not is_done:
+            payload["done_during_visit_id"] = None
     if not payload:
         return jsonify({"error": "no updatable fields provided"}), 400
     payload["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -906,12 +948,12 @@ def finalize_visit(visit_id):
 
     existing_plan = db_call(
         supabase.table("patient_plan_items")
-        .select("category, text, done")
+        .select("id, category, text, done")
         .eq("patient_id", patient_id)
         .execute
     )
 
-    new_state, new_plan_items = extract_patient_state(
+    new_state, new_plan_items, completed_plan_ids = extract_patient_state(
         current_state, transcript, existing_plan_items=existing_plan.data or []
     )
 
@@ -947,6 +989,29 @@ def finalize_visit(visit_id):
             supabase.table("patient_plan_items").insert(rows_to_insert).execute
         )
 
+    # Auto-mark items the LLM confidently flagged as completed by this visit.
+    # done_source='ai' so the UI can render them differently and the doctor
+    # can confirm or undo.
+    auto_completed = 0
+    for cid in completed_plan_ids:
+        try:
+            db_call(
+                supabase.table("patient_plan_items")
+                .update({
+                    "done": True,
+                    "done_source": "ai",
+                    "done_during_visit_id": visit_id,
+                    "updated_at": now_iso,
+                })
+                .eq("id", cid)
+                .eq("patient_id", patient_id)
+                .eq("done", False)
+                .execute
+            )
+            auto_completed += 1
+        except Exception:
+            continue
+
     db_call(
         supabase.table("doctor_patient_snapshots")
         .upsert({
@@ -959,7 +1024,11 @@ def finalize_visit(visit_id):
         .execute
     )
 
-    return jsonify({"ok": True, "added_plan_items": len(rows_to_insert)})
+    return jsonify({
+        "ok": True,
+        "added_plan_items": len(rows_to_insert),
+        "auto_completed_plan_items": auto_completed,
+    })
 
 
 # ---------------------------------------------------------------------------

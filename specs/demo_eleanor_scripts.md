@@ -1,56 +1,54 @@
 # Eleanor Brooks — 2-Minute Demo Scripts
 
-Two short visit scripts (~25s spoken each) for a 2-minute end-to-end demo. The flow:
+Two short visit scripts (~25s each) for a 2-minute demo. Plain language so non-clinical judges can follow.
 
-1. **Dr. Patel** admits Eleanor → records Visit 1 → generates admission note.
-2. **Dr. Chen** opens Eleanor's record → asks Clair a clarifying question → records Visit 2.
-3. **Dr. Patel** returns → "What's changed" surfaces real, meaningful deltas.
+1. **Doctor 1** admits Eleanor → records Visit 1 → admission note generates.
+2. **Doctor 2** opens Eleanor's record → asks Clair a clarifying question → records Visit 2.
+3. **Doctor 1** comes back → "What's Changed" surfaces real, meaningful deltas.
 
-Cast: **Dr. P** (Patel), **Dr. C** (Chen), **E** (Eleanor, 78F), **D** (daughter).
-
----
-
-## Visit 1 — Dr. Patel admits Eleanor
-
-> **Dr. P:** Eleanor, what happened this morning?
->
-> **E:** I stood up from the couch, got real dizzy, and went down on the right side of my head.
->
-> **D:** Her PCP started her on lisinopril three weeks ago. She's also on hydrochlorothiazide and metformin. She uses ibuprofen for her knees.
->
-> **Dr. P:** Orthostatics — lying 142 over 84, standing 102 over 64. That's a real drop. Plan: hold the lisinopril and the HCTZ, IV fluids, head CT to rule out a bleed. Daughter-supervised tonight.
-
-→ Generate admission note from this visit.
+Cast: **Doctor 1**, **Doctor 2**, **E** (Eleanor, 78).
 
 ---
 
-## Clarifying question — Dr. Chen asks Clair
+## Visit 1 — Doctor 1 admits Eleanor
 
-Before recording, Dr. Chen asks the chat:
+> **Doctor 1:** Eleanor, what happened this morning?
+>
+> **E:** I stood up from the couch, got really dizzy, and fell. Hit the right side of my head. My doctor put me on a new blood pressure pill three weeks ago, and I take ibuprofen for my knees.
+>
+> **Doctor 1:** Okay Eleanor, your blood pressure drops a lot when you stand up — that's almost certainly what caused the fall this morning. I'm going to stop that new blood pressure pill for now and get some fluids into you. We'll also run a quick head scan to make sure there's no bleeding from where you hit your head. We're going to keep you here tonight to watch you closely.
 
-> *"Why was lisinopril held?"*
-
-Clair answers from Visit 1's transcript and the patient state: orthostatic hypotension on standing, started lisinopril 3 weeks prior — likely contributor.
+→ Admission note generates from this visit.
 
 ---
 
-## Visit 2 — Dr. Chen follow-up
+## Clarifying question — Doctor 2 asks Clair
 
-> **Dr. C:** Eleanor, how are you feeling?
->
-> **E:** Better. Confusion's gone. Still a little dizzy if I stand up too fast.
->
-> **Dr. C:** Orthostatics improving — lying 138 over 80, standing 118 over 70. CT was clean, just a small right temporal subgaleal hematoma, no bleed. With her CKD, I'm stopping the ibuprofen — switch to acetaminophen. Starting home PT for balance. Follow-up in two weeks.
+Before recording, Doctor 2 asks the chat:
+
+> *"Why was her blood pressure medication stopped?"*
+
+Clair answers from Visit 1: she got dizzy and fell when standing up; the new pill she started three weeks ago is the most likely cause.
 
 ---
 
-## Dr. Patel returns — "What's changed"
+## Visit 2 — Doctor 2 follow-up
 
-When Dr. Patel reopens Eleanor, the diff surfaces:
+> **Doctor 2:** Eleanor, how are you feeling?
+>
+> **E:** Better. The confusion's gone. Just a little dizzy if I get up too fast.
+>
+> **Doctor 2:** That's great to hear, Eleanor. Your blood pressure's looking much better when you stand now — really good sign. Your head scan came back clean, no bleeding. One change I want to make: I'd like you off the ibuprofen for your knees. It can be hard on your kidneys at your age — let's switch you to acetaminophen instead. I'm also going to set you up with at-home physical therapy to work on your balance, and we'll see you back in two weeks.
 
-- **Subjective** — "Felt dizzy on standing, fell" → "Better. Confusion gone. Mild dizziness on quick stand."
-- **Medications** — `− Ibuprofen PRN` / `+ Acetaminophen PRN`
-- **Vitals** — Lying BP 142/84 → 138/80; standing 102/64 → 118/70.
-- **Plan** — `+ Home PT for balance` / `+ Follow-up in 2 weeks` / `+ No NSAIDs (CKD)`
+---
 
-Plus a 1-sentence summary at the top from Clair: "Symptoms improving on held antihypertensives; ibuprofen swapped for acetaminophen given CKD; home PT and 2-week follow-up added."
+## Doctor 1 comes back — "What's Changed"
+
+Doctor 1 reopens Eleanor's chart. The diff lights up:
+
+- **Patient says** — "Felt dizzy, fell" → "Better. Confusion gone. Mild dizziness on quick stand."
+- **Medications** — `− Ibuprofen` / `+ Acetaminophen`
+- **Vitals** — Standing blood pressure: 102/64 → 118/70 (improved).
+- **Plan** — `+ At-home physical therapy` / `+ Follow-up in 2 weeks` / `+ Avoid ibuprofen (kidneys)`
+
+A 1-sentence summary at the top: "Eleanor is improving since stopping the new blood pressure medication. Pain reliever swapped for a kidney-safe one. Physical therapy and a 2-week follow-up added."

@@ -158,5 +158,16 @@ create table if not exists patient_plan_items (
 alter table patient_plan_items
   add column if not exists created_during_visit_id uuid references visits(id) on delete set null;
 
+-- Provenance for completion: who/what marked this done?
+--   'user' = a doctor manually checked it off
+--   'ai'   = the LLM inferred it was completed during a visit transcript
+-- Null when not done.
+alter table patient_plan_items
+  add column if not exists done_source text
+    check (done_source in ('user', 'ai'));
+
+alter table patient_plan_items
+  add column if not exists done_during_visit_id uuid references visits(id) on delete set null;
+
 create index if not exists patient_plan_items_patient_idx
   on patient_plan_items (patient_id, created_at desc);

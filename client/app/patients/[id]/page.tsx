@@ -3010,7 +3010,16 @@ function PlanCard({
   async function handleToggleDone(item: PlanItem) {
     const next = !item.done;
     setLocalItems((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, done: next } : i))
+      prev.map((i) =>
+        i.id === item.id
+          ? {
+              ...i,
+              done: next,
+              done_source: next ? "user" : null,
+              done_during_visit_id: next ? i.done_during_visit_id : null,
+            }
+          : i
+      )
     );
     try {
       await api(`/api/patients/${patientId}/plan-items/${item.id}`, {
@@ -3019,7 +3028,16 @@ function PlanCard({
       });
     } catch (err) {
       setLocalItems((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, done: !next } : i))
+        prev.map((i) =>
+          i.id === item.id
+            ? {
+                ...i,
+                done: item.done,
+                done_source: item.done_source,
+                done_during_visit_id: item.done_during_visit_id,
+              }
+            : i
+        )
       );
       setError(err instanceof Error ? err.message : "Failed to update item");
     }
@@ -3255,10 +3273,15 @@ function PlanItemRow({
     );
   }
 
+  const isAutoCompleted = item.done && item.done_source === "ai";
+
   return (
     <li
       className="group flex items-center gap-2 rounded-lg p-2"
-      style={{ background: style.bg, border: `1px solid ${style.border}` }}
+      style={{
+        background: style.bg,
+        border: `1px ${isAutoCompleted ? "dashed" : "solid"} ${style.border}`,
+      }}
     >
       <input
         type="checkbox"
@@ -3267,6 +3290,11 @@ function PlanItemRow({
         className="h-3.5 w-3.5 shrink-0 cursor-pointer"
         style={{ accentColor: style.dot }}
         aria-label={item.done ? "Mark as not done" : "Mark as done"}
+        title={
+          isAutoCompleted
+            ? "Auto-completed from a visit transcript — uncheck to undo"
+            : undefined
+        }
       />
       <button
         type="button"
@@ -3281,14 +3309,33 @@ function PlanItemRow({
       >
         {item.text}
       </button>
-      {item.created_during_visit_id && (
+      {isAutoCompleted ? (
         <span
-          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-          style={{ background: "white", border: `1px solid ${style.border}`, color: style.fg }}
-          title="Added from a visit transcript"
+          className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+          style={{ background: "white", border: `1px dashed ${style.border}`, color: style.fg }}
+          title="Clair inferred this was completed during a visit. Uncheck to undo."
         >
-          from visit
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+            <path
+              d="M2 5l2 2 4-4"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          auto
         </span>
+      ) : (
+        item.created_during_visit_id && (
+          <span
+            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+            style={{ background: "white", border: `1px solid ${style.border}`, color: style.fg }}
+            title="Added from a visit transcript"
+          >
+            from visit
+          </span>
+        )
       )}
       <button
         type="button"

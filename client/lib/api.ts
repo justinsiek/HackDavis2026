@@ -118,6 +118,8 @@ export type PlanItem = {
   category: PlanItemCategory;
   text: string;
   done: boolean;
+  done_source: "user" | "ai" | null;
+  done_during_visit_id: string | null;
   created_at: string;
   created_by: string | null;
   created_during_visit_id: string | null;

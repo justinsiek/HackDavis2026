@@ -910,5 +910,181 @@ def clear_chat(patient_id):
     return jsonify({"ok": True})
 
 
+# ---------------------------------------------------------------------------
+# Manual edits — append-only changelog + publish
+# ---------------------------------------------------------------------------
+
+EDITABLE_FIELDS = {
+    "synopsis",
+    "current_presentation",
+    "active_diagnoses",
+    "current_medications",
+    "treatment_plan",
+    "recent_vitals",
+    "long_term_goals",
+}
+
+
+@app.route("/api/patients/<patient_id>/edits", methods=["POST"])
+def publish_edits(patient_id):
+    """
+    Apply manual edits to patient_state. Append one row to
+    patient_field_changes for each field that actually differs from current,
+    then update patient_state and advance the editing doctor's snapshot.
+
+    Body: { "fields": { "<field>": <new_value>, ... } }
+    Only fields in EDITABLE_FIELDS are accepted.
+    """
+    doctor, err = require_doctor()
+    if err:
+        return err
+
+    body = request.get_json(silent=True) or {}
+    fields_in = body.get("fields") or {}
+    if not isinstance(fields_in, dict):
+        return jsonify({"error": "'fields' must be an object"}), 400
+
+    unknown = set(fields_in.keys()) - EDITABLE_FIELDS
+    if unknown:
+        return jsonify({"error": f"unknown fields: {sorted(unknown)}"}), 400
+
+    state_row = db_call(
+        supabase.table("patient_state")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .limit(1)
+        .execute
+    )
+    if not state_row.data:
+        return jsonify({"error": "patient state not found"}), 404
+    current_state = state_row.data[0]
+    current_subset = state_subset(current_state)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    changed_fields = []
+    update_payload = {}
+    changelog_rows = []
+
+    for field, new_value in fields_in.items():
+        old_value = current_subset.get(field)
+        if old_value == new_value:
+            continue
+        changed_fields.append(field)
+        update_payload[field] = new_value
+        changelog_rows.append({
+            "patient_id": patient_id,
+            "field": field,
+            "before_value": old_value,
+            "after_value": new_value,
+            "changed_by": doctor["id"],
+            "changed_at": now_iso,
+            "source": "edit",
+        })
+
+    if not changed_fields:
+        return jsonify({
+            "current_state": current_state,
+            "changed_fields": [],
+        })
+
+    # Append to changelog first (additive only — we never update or delete these rows).
+    db_call(
+        supabase.table("patient_field_changes").insert(changelog_rows).execute
+    )
+
+    update_payload["updated_at"] = now_iso
+    db_call(
+        supabase.table("patient_state")
+        .update(update_payload)
+        .eq("patient_id", patient_id)
+        .execute
+    )
+
+    state_row = db_call(
+        supabase.table("patient_state")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .limit(1)
+        .execute
+    )
+    new_state = state_row.data[0]
+
+    # Advance editor's snapshot to match the new truth (Option A — whole snapshot).
+    db_call(
+        supabase.table("doctor_patient_snapshots")
+        .upsert({
+            "doctor_id": doctor["id"],
+            "patient_id": patient_id,
+            "snapshot": state_subset(new_state),
+            "snapshot_at": now_iso,
+            "last_visit_id": None,
+        })
+        .execute
+    )
+
+    return jsonify({
+        "current_state": new_state,
+        "changed_fields": changed_fields,
+    })
+
+
+@app.route("/api/patients/<patient_id>/changes", methods=["GET"])
+def get_field_changes(patient_id):
+    """
+    Read the changelog. With ?field=<name> returns rows for that field newest-first.
+    Without a field param returns per-field counts so the UI can render history badges
+    without firing one request per field.
+    """
+    _, err = require_doctor()
+    if err:
+        return err
+
+    field = request.args.get("field")
+    if not field:
+        # Bulk variant — return one count per editable field. Fields with zero
+        # rows are still present so the client can rely on every key existing.
+        result = db_call(
+            supabase.table("patient_field_changes")
+            .select("field")
+            .eq("patient_id", patient_id)
+            .execute
+        )
+        counts = {f: 0 for f in EDITABLE_FIELDS}
+        for row in result.data or []:
+            f = row.get("field")
+            if f in counts:
+                counts[f] += 1
+        return jsonify({"counts": counts})
+
+    if field not in EDITABLE_FIELDS:
+        return jsonify({"error": f"unknown field: {field}"}), 400
+
+    result = db_call(
+        supabase.table("patient_field_changes")
+        .select("id, before_value, after_value, changed_by, changed_at, source")
+        .eq("patient_id", patient_id)
+        .eq("field", field)
+        .order("changed_at", desc=True)
+        .execute
+    )
+    rows = result.data or []
+
+    doctor_ids = list({r["changed_by"] for r in rows if r.get("changed_by")})
+    doctor_names = {}
+    if doctor_ids:
+        d_result = db_call(
+            supabase.table("doctors")
+            .select("id, name")
+            .in_("id", doctor_ids)
+            .execute
+        )
+        doctor_names = {d["id"]: d["name"] for d in (d_result.data or [])}
+
+    for r in rows:
+        r["changed_by_name"] = doctor_names.get(r.get("changed_by"))
+
+    return jsonify({"changes": rows})
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=8080)

@@ -15,19 +15,50 @@ import {
   api,
   ApiError,
   Diagnosis,
+  EDITABLE_FIELDS,
+  EditableField,
+  FieldChangeCounts,
   GetPatientResponse,
   Medication,
   Patient,
   PatientDocument,
+  PatientState,
+  PublishEditsResponse,
   Visit,
   Vitals,
+  getFieldChangeCounts,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Lab, mockLabs, mockVitalsSeries, VitalSeries } from "@/lib/mockClinical";
 import RecordingView from "./RecordingView";
 import Sparkline from "./Sparkline";
+import { FieldHistoryPopup } from "./FieldHistoryPopup";
 
 type Props = { params: Promise<{ id: string }> };
+
+// Vitals stays as raw JSON (5 flat string fields, structure rarely changes).
+// Medications and active problems use per-item form modals where each row
+// has labeled text inputs — schema-preserving, easy to edit one field at
+// a time without rewriting the whole list.
+type EditorSpec =
+  | { kind: "vitals"; initialRaw: string }
+  | { kind: "medications"; initial: Medication[] }
+  | { kind: "problems"; initial: Diagnosis[] };
+
+function structurallyEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+function buildPublishPayload(
+  draft: PatientState,
+  current: PatientState
+): Partial<Record<EditableField, unknown>> {
+  const payload: Partial<Record<EditableField, unknown>> = {};
+  for (const f of EDITABLE_FIELDS) {
+    if (!structurallyEqual(draft[f], current[f])) payload[f] = draft[f];
+  }
+  return payload;
+}
 
 export default function PatientDetailPage({ params }: Props) {
   const { id } = use(params);
@@ -42,6 +73,23 @@ export default function PatientDetailPage({ params }: Props) {
   const [noteText, setNoteText] = useState<string | null>(null);
   const [noteSourceVisitId, setNoteSourceVisitId] = useState<string | null>(null);
   const [isDraftingNote, setIsDraftingNote] = useState(false);
+
+  // Edit-mode state. draftState is a working copy of current_state. For the
+  // three jsonb fields we keep the user's raw textarea text alongside the
+  // parsed value so they can type temporarily-invalid JSON without losing it.
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftState, setDraftState] = useState<PatientState | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
+  const [openEditor, setOpenEditor] = useState<EditorSpec | null>(null);
+
+  // Per-editable-field counts of historical edits, used to badge the history
+  // trigger buttons. Loaded once per patient view; refreshed after a publish.
+  const [changeCounts, setChangeCounts] = useState<FieldChangeCounts | null>(
+    null
+  );
+  const [historyField, setHistoryField] = useState<EditableField | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -66,10 +114,112 @@ export default function PatientDetailPage({ params }: Props) {
     }
   }, [id, router, setDoctor]);
 
+  // Refresh field-change counts. Called on patient load and after a publish
+  // so the history badges stay in sync with the changelog.
+  const loadChangeCounts = useCallback(async () => {
+    try {
+      const res = await getFieldChangeCounts(id);
+      setChangeCounts(res.counts);
+    } catch {
+      // Counts are a UI nicety — don't surface errors to the user.
+      setChangeCounts(null);
+    }
+  }, [id]);
+
   useEffect(() => {
     if (!doctor) return;
     loadPatient();
-  }, [doctor, loadPatient]);
+    loadChangeCounts();
+  }, [doctor, loadPatient, loadChangeCounts]);
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (!isEditing || !draftState || !data?.current_state) return false;
+    const payload = buildPublishPayload(draftState, data.current_state);
+    return Object.keys(payload).length > 0;
+  }, [isEditing, draftState, data?.current_state]);
+
+  function enterEditMode() {
+    if (!data?.current_state) return;
+    setDraftState({ ...data.current_state });
+    setPublishError(null);
+    setIsEditing(true);
+  }
+
+  function exitEditMode() {
+    setIsEditing(false);
+    setDraftState(null);
+    setPublishError(null);
+    setIsPublishing(false);
+    setOpenEditor(null);
+  }
+
+  function updateDraftField<F extends EditableField>(
+    field: F,
+    value: PatientState[F]
+  ) {
+    setDraftState((d) => (d ? { ...d, [field]: value } : d));
+  }
+
+  // Publishes the draft. If `andThen` is provided, runs it after the
+  // patient refetch — used by the modal's "Save & continue" path so the
+  // pending navigation runs only after the save lands.
+  async function publish(andThen?: () => void) {
+    if (!draftState || !data?.current_state) return;
+    const payload = buildPublishPayload(draftState, data.current_state);
+    if (Object.keys(payload).length === 0) {
+      // Nothing actually changed — just exit edit mode.
+      exitEditMode();
+      andThen?.();
+      return;
+    }
+    setIsPublishing(true);
+    setPublishError(null);
+    try {
+      await api<PublishEditsResponse>(`/api/patients/${id}/edits`, {
+        method: "POST",
+        body: JSON.stringify({ fields: payload }),
+      });
+      exitEditMode();
+      await loadPatient();
+      loadChangeCounts();
+      andThen?.();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setDoctor(null);
+        router.replace("/login");
+        return;
+      }
+      setPublishError(
+        err instanceof Error ? err.message : "Failed to publish changes"
+      );
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
+  // Wrap any in-app navigation/action that should be blocked while there
+  // are unsaved edits. If clean, runs immediately; if dirty, stashes the
+  // action and opens the unsaved-changes modal.
+  function requestNavigation(action: () => void) {
+    if (!hasUnsavedChanges) {
+      action();
+      return;
+    }
+    setPendingNav(() => action);
+  }
+
+  // Browser-level fallback for tab close / hard refresh / address-bar
+  // navigation. The browser shows its own native confirmation — we cannot
+  // render the custom modal at this point (browser security restriction).
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   async function startRecording() {
     setError(null);
@@ -140,15 +290,56 @@ export default function PatientDetailPage({ params }: Props) {
           <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3">
             <Link
               href="/patients"
+              onNavigate={(e) => {
+                if (!hasUnsavedChanges) return;
+                e.preventDefault();
+                setPendingNav(() => () => router.push("/patients"));
+              }}
               className="text-sm text-zinc-600 hover:text-zinc-900"
             >
               ← All patients
             </Link>
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-3 text-sm">
               <span className="text-zinc-600">
                 Logged in as{" "}
                 <span className="font-medium text-zinc-900">{doctor.name}</span>
               </span>
+              {!isEditing ? (
+                <button
+                  onClick={enterEditMode}
+                  disabled={!data?.current_state}
+                  title={
+                    !data?.current_state
+                      ? "Patient state not loaded yet"
+                      : "Edit this patient's record"
+                  }
+                  className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
+                >
+                  Edit record
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => requestNavigation(exitEditMode)}
+                    disabled={isPublishing}
+                    className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => publish()}
+                    disabled={isPublishing || !hasUnsavedChanges}
+                    title={
+                      !hasUnsavedChanges
+                        ? "No changes to publish"
+                        : "Publish changes to this record"
+                    }
+                    className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60"
+                  >
+                    {isPublishing ? "Publishing…" : "Publish changes"}
+                  </button>
+                </>
+              )}
               <button
                 onClick={draftAdmissionNote}
                 disabled={isDraftingNote || !latestVisit}
@@ -162,14 +353,14 @@ export default function PatientDetailPage({ params }: Props) {
                 {isDraftingNote ? "Drafting…" : "Draft Admission Note"}
               </button>
               <button
-                onClick={() => setIsChatOpen((o) => !o)}
+                onClick={() => requestNavigation(() => setIsChatOpen((o) => !o))}
                 disabled={!data?.patient}
                 className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
               >
                 {isChatOpen ? "Close chat" : "Ask AI"}
               </button>
               <button
-                onClick={startRecording}
+                onClick={() => requestNavigation(startRecording)}
                 disabled={isStartingVisit || !data?.patient}
                 className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-60"
               >
@@ -177,6 +368,11 @@ export default function PatientDetailPage({ params }: Props) {
               </button>
             </div>
           </div>
+          {publishError && (
+            <div className="mx-auto w-full max-w-[1600px] px-4 pb-3 text-sm text-red-700">
+              {publishError}
+            </div>
+          )}
         </header>
 
         <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-4">
@@ -187,7 +383,16 @@ export default function PatientDetailPage({ params }: Props) {
               {error}
             </div>
           ) : data?.patient ? (
-            <Bento data={data} onChange={loadPatient} />
+            <Bento
+              data={data}
+              onChange={loadPatient}
+              isEditing={isEditing}
+              draftState={draftState}
+              onTextFieldChange={updateDraftField}
+              onOpenEditor={setOpenEditor}
+              changeCounts={changeCounts}
+              onOpenHistory={setHistoryField}
+            />
           ) : null}
         </main>
       </div>
@@ -198,6 +403,69 @@ export default function PatientDetailPage({ params }: Props) {
         patientId={id}
         patientName={data?.patient?.name ?? ""}
       />
+
+      {openEditor?.kind === "vitals" && draftState && (
+        <VitalsEditModal
+          initialRaw={openEditor.initialRaw}
+          onSave={(parsed) => {
+            updateDraftField("recent_vitals", parsed);
+            setOpenEditor(null);
+          }}
+          onClose={() => setOpenEditor(null)}
+        />
+      )}
+
+      {openEditor?.kind === "medications" && draftState && (
+        <MedicationsEditModal
+          initial={openEditor.initial}
+          onSave={(list) => {
+            updateDraftField("current_medications", list);
+            setOpenEditor(null);
+          }}
+          onClose={() => setOpenEditor(null)}
+        />
+      )}
+
+      {openEditor?.kind === "problems" && draftState && (
+        <ProblemsEditModal
+          initial={openEditor.initial}
+          onSave={(list) => {
+            updateDraftField("active_diagnoses", list);
+            setOpenEditor(null);
+          }}
+          onClose={() => setOpenEditor(null)}
+        />
+      )}
+
+      {pendingNav && (
+        <UnsavedChangesModal
+          isPublishing={isPublishing}
+          onSaveAndContinue={() => {
+            const action = pendingNav;
+            setPendingNav(null);
+            publish(action);
+          }}
+          onDiscardAndContinue={() => {
+            const action = pendingNav;
+            setPendingNav(null);
+            exitEditMode();
+            action();
+          }}
+          onStay={() => setPendingNav(null)}
+        />
+      )}
+
+      {historyField && data?.patient && (
+        <FieldHistoryPopup
+          patientId={id}
+          field={historyField}
+          viewerSnapshotValue={
+            data.viewer_snapshot?.snapshot?.[historyField] ?? null
+          }
+          currentValue={data.current_state?.[historyField] ?? null}
+          onClose={() => setHistoryField(null)}
+        />
+      )}
 
       {noteText !== null && noteSourceVisitId && (
         <NoteModal
@@ -564,32 +832,80 @@ function ChatSidebar({
 // Bento layout
 // ---------------------------------------------------------------------------
 
+type BentoEditProps = {
+  isEditing: boolean;
+  draftState: PatientState | null;
+  onTextFieldChange: <F extends EditableField>(
+    field: F,
+    value: PatientState[F]
+  ) => void;
+  onOpenEditor: (spec: EditorSpec) => void;
+  changeCounts: FieldChangeCounts | null;
+  onOpenHistory: (field: EditableField) => void;
+};
+
 function Bento({
   data,
   onChange,
+  isEditing,
+  draftState,
+  onTextFieldChange,
+  onOpenEditor,
+  changeCounts,
+  onOpenHistory,
 }: {
   data: GetPatientResponse;
   onChange: () => void;
-}) {
+} & BentoEditProps) {
   const { patient } = data;
-  const state = data.current_state;
+  // When editing, the cards render from draftState so the user sees their
+  // in-progress edits. When not editing, they render from current truth.
+  const state = isEditing && draftState ? draftState : data.current_state;
   const vitalsSeries = useMemo(() => mockVitalsSeries(patient.id), [patient.id]);
   const labs = useMemo(() => mockLabs(patient.id), [patient.id]);
+
+  // Build a history-trigger button for one editable field. Always rendered
+  // (per the design), badge only when there's at least one prior edit.
+  const history = (field: EditableField) => (
+    <HistoryButton
+      count={changeCounts?.[field] ?? 0}
+      onClick={() => onOpenHistory(field)}
+    />
+  );
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
       {/* Row 1: header + medications + long-term goals */}
       <div className="lg:col-span-6">
-        <PatientHeaderCard patient={patient} synopsis={state?.synopsis ?? ""} />
+        <PatientHeaderCard
+          patient={patient}
+          synopsis={state?.synopsis ?? ""}
+          editing={isEditing}
+          onSynopsisChange={(v) => onTextFieldChange("synopsis", v)}
+          historyAction={history("synopsis")}
+        />
       </div>
       <div className="lg:col-span-3">
-        <MedicationsCard medications={state?.current_medications ?? []} />
+        <MedicationsCard
+          medications={state?.current_medications ?? []}
+          editing={isEditing}
+          onOpenEditor={() =>
+            onOpenEditor({
+              kind: "medications",
+              initial: state?.current_medications ?? [],
+            })
+          }
+          historyAction={history("current_medications")}
+        />
       </div>
       <div className="lg:col-span-3">
         <TextCard
           title="Long-term goals"
           content={state?.long_term_goals ?? ""}
           emptyText="No long-term goals set."
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("long_term_goals", v)}
+          headerAction={history("long_term_goals")}
         />
       </div>
 
@@ -602,19 +918,53 @@ function Bento({
 
       {/* Row 3: problems / subjective */}
       <div className="lg:col-span-6">
-        <ProblemsCard diagnoses={state?.active_diagnoses ?? []} />
+        <ProblemsCard
+          diagnoses={state?.active_diagnoses ?? []}
+          editing={isEditing}
+          onOpenEditor={() =>
+            onOpenEditor({
+              kind: "problems",
+              initial: state?.active_diagnoses ?? [],
+            })
+          }
+          historyAction={history("active_diagnoses")}
+        />
       </div>
       <div className="lg:col-span-6">
         <TextCard
           title="Subjective"
           content={state?.current_presentation ?? ""}
           emptyText="Nothing reported yet."
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("current_presentation", v)}
+          headerAction={history("current_presentation")}
         />
       </div>
 
       {/* Row 4: vitals + labs + past medical documents */}
       <div className="lg:col-span-4">
-        <VitalsCard vitals={state?.recent_vitals ?? null} series={vitalsSeries} />
+        <VitalsCard
+          vitals={state?.recent_vitals ?? null}
+          series={vitalsSeries}
+          editing={isEditing}
+          onOpenEditor={() => {
+            const v = state?.recent_vitals ?? null;
+            const synthesized: Vitals = {
+              bp:
+                v?.bp ||
+                `${last(vitalsSeries.bp_sys)}/${last(vitalsSeries.bp_dia)}`,
+              hr: v?.hr || String(last(vitalsSeries.hr)),
+              temp_c: v?.temp_c || last(vitalsSeries.temp_c).toFixed(1),
+              o2_sat: v?.o2_sat || String(last(vitalsSeries.o2_sat)),
+              taken_at: v?.taken_at || new Date().toISOString(),
+            };
+            onOpenEditor({
+              kind: "vitals",
+              initialRaw: JSON.stringify(synthesized, null, 2),
+            });
+          }}
+          historyAction={history("recent_vitals")}
+        />
       </div>
       <div className="lg:col-span-4">
         <LabsCard labs={labs} />
@@ -636,6 +986,9 @@ function Bento({
           title="Plan & next steps"
           content={state?.treatment_plan ?? ""}
           emptyText="No plan recorded yet."
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("treatment_plan", v)}
+          headerAction={history("treatment_plan")}
         />
       </div>
     </div>
@@ -685,6 +1038,61 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="text-sm italic text-zinc-400">{children}</p>;
 }
 
+function EditFieldButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50"
+    >
+      Edit
+    </button>
+  );
+}
+
+// Small clock-icon button shown next to every editable field. Opens the
+// per-field changelog popup. Badge shows how many prior edits exist (omitted
+// when zero so the icon doesn't get visual noise for unchanged fields).
+function HistoryButton({
+  count,
+  onClick,
+}: {
+  count: number;
+  onClick: () => void;
+}) {
+  const title =
+    count === 0
+      ? "No prior edits — click to view current vs. last visit"
+      : count === 1
+        ? "1 prior edit"
+        : `${count} prior edits`;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 transition hover:bg-zinc-50"
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="8" cy="8" r="6.4" />
+        <path d="M8 4.5V8l2.4 1.6" />
+      </svg>
+      {count > 0 && <span className="tabular-nums">{count}</span>}
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Patient header & What's changed
 // ---------------------------------------------------------------------------
@@ -692,9 +1100,15 @@ function Empty({ children }: { children: ReactNode }) {
 function PatientHeaderCard({
   patient,
   synopsis,
+  editing,
+  onSynopsisChange,
+  historyAction,
 }: {
   patient: Patient;
   synopsis: string;
+  editing: boolean;
+  onSynopsisChange: (v: string | null) => void;
+  historyAction?: ReactNode;
 }) {
   const meta: string[] = [];
   if (patient.dob) meta.push(`${calcAge(patient.dob)} y`);
@@ -717,14 +1131,25 @@ function PatientHeaderCard({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
-            {patient.name}
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">{meta.join(" · ")}</p>
-          {synopsis ? (
-            <p className="mt-3 text-base leading-7 text-zinc-700">
-              {synopsis}
-            </p>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
+                {patient.name}
+              </h1>
+              <p className="mt-1 text-sm text-zinc-500">{meta.join(" · ")}</p>
+            </div>
+            {historyAction}
+          </div>
+          {editing ? (
+            <textarea
+              value={synopsis}
+              onChange={(e) => onSynopsisChange(e.target.value || null)}
+              placeholder="Synopsis (clinical one-liner)"
+              rows={3}
+              className="mt-3 w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-base leading-7 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+            />
+          ) : synopsis ? (
+            <p className="mt-3 text-base leading-7 text-zinc-700">{synopsis}</p>
           ) : (
             <p className="mt-3 text-sm italic text-zinc-400">
               Synopsis will appear here after the first visit.
@@ -759,10 +1184,428 @@ function ChangedCard({ narrative }: { narrative: string | null }) {
 // Problems / Medications
 // ---------------------------------------------------------------------------
 
-function ProblemsCard({ diagnoses }: { diagnoses: Diagnosis[] }) {
+function ModalFrame({
+  title,
+  children,
+  footer,
+  onClose,
+}: {
+  title: string;
+  children: ReactNode;
+  footer: ReactNode;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="editor-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4 py-8 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-zinc-200"
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-zinc-200 px-5 py-3">
+          <h2
+            id="editor-modal-title"
+            className="text-base font-semibold text-zinc-900"
+          >
+            {title}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <path d="M3 3l12 12M15 3L3 15" />
+            </svg>
+          </button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
+          {children}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-5 py-3">
+          {footer}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalFooterButtons({
+  saveDisabled,
+  saveTitle,
+  onSave,
+  onCancel,
+}: {
+  saveDisabled: boolean;
+  saveTitle?: string;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saveDisabled}
+        title={saveTitle}
+        className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60"
+      >
+        Save
+      </button>
+    </>
+  );
+}
+
+function VitalsEditModal({
+  initialRaw,
+  onSave,
+  onClose,
+}: {
+  initialRaw: string;
+  onSave: (parsed: Vitals | null) => void;
+  onClose: () => void;
+}) {
+  const [raw, setRaw] = useState(initialRaw);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const dirty = raw !== initialRaw;
+
+  function handleChange(v: string) {
+    setRaw(v);
+    if (v.trim() === "") {
+      setError("Cannot be empty");
+      return;
+    }
+    try {
+      JSON.parse(v);
+      setError(undefined);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Invalid JSON");
+    }
+  }
+
+  function handleSave() {
+    if (error) return;
+    try {
+      const parsed = JSON.parse(raw) as Vitals | null;
+      onSave(parsed);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Invalid JSON");
+    }
+  }
+
+  return (
+    <ModalFrame
+      title="Edit recent vitals"
+      onClose={onClose}
+      footer={
+        <ModalFooterButtons
+          saveDisabled={!!error || !dirty}
+          saveTitle={
+            error
+              ? "Fix the JSON error first"
+              : !dirty
+                ? "No changes to save"
+                : "Apply to draft (you still need to publish)"
+          }
+          onSave={handleSave}
+          onCancel={onClose}
+        />
+      }
+    >
+      <p className="mb-2 text-xs text-zinc-500">
+        Edit the raw JSON. Changes only apply to your draft when you click
+        Save — Cancel discards them.
+      </p>
+      <textarea
+        value={raw}
+        onChange={(e) => handleChange(e.target.value)}
+        spellCheck={false}
+        placeholder={
+          initialRaw ||
+          '{"bp": "...", "hr": "...", "temp_c": "...", "o2_sat": "...", "taken_at": "..."}'
+        }
+        autoFocus
+        className="min-h-[280px] flex-1 resize-y rounded-md border border-zinc-300 px-2 py-1.5 font-mono text-xs leading-5 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+      />
+      {error && (
+        <p className="mt-1 text-xs text-red-600">JSON error: {error}</p>
+      )}
+    </ModalFrame>
+  );
+}
+
+// Strips rows where every column is empty/whitespace — prevents the user
+// from accidentally publishing an empty placeholder row they added but
+// never filled in.
+function nonEmptyRow<T extends Record<string, string>>(row: T): boolean {
+  return Object.values(row).some((v) => v.trim() !== "");
+}
+
+function MedicationsEditModal({
+  initial,
+  onSave,
+  onClose,
+}: {
+  initial: Medication[];
+  onSave: (list: Medication[]) => void;
+  onClose: () => void;
+}) {
+  const [list, setList] = useState<Medication[]>(
+    initial.length > 0 ? initial : [{ name: "", dose: "", frequency: "" }]
+  );
+  const cleaned = list.filter(nonEmptyRow);
+  const dirty = JSON.stringify(cleaned) !== JSON.stringify(initial);
+
+  function updateRow(i: number, patch: Partial<Medication>) {
+    setList((rows) =>
+      rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+    );
+  }
+  function removeRow(i: number) {
+    setList((rows) => rows.filter((_, idx) => idx !== i));
+  }
+  function addRow() {
+    setList((rows) => [...rows, { name: "", dose: "", frequency: "" }]);
+  }
+
+  return (
+    <ModalFrame
+      title="Edit current medications"
+      onClose={onClose}
+      footer={
+        <ModalFooterButtons
+          saveDisabled={!dirty}
+          saveTitle={
+            !dirty
+              ? "No changes to save"
+              : "Apply to draft (you still need to publish)"
+          }
+          onSave={() => onSave(cleaned)}
+          onCancel={onClose}
+        />
+      }
+    >
+      <p className="mb-3 text-xs text-zinc-500">
+        Edit each medication&apos;s name, dose, and frequency. Empty rows are
+        removed on save. Changes only apply to your draft when you click Save.
+      </p>
+      <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-[1.4fr_1fr_1fr_auto] gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          <span>Name</span>
+          <span>Dose</span>
+          <span>Frequency</span>
+          <span className="sr-only">Remove</span>
+        </div>
+        {list.map((med, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[1.4fr_1fr_1fr_auto] items-center gap-2"
+          >
+            <input
+              value={med.name}
+              onChange={(e) => updateRow(i, { name: e.target.value })}
+              placeholder="Metformin"
+              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+            />
+            <input
+              value={med.dose}
+              onChange={(e) => updateRow(i, { dose: e.target.value })}
+              placeholder="500 mg"
+              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+            />
+            <input
+              value={med.frequency}
+              onChange={(e) => updateRow(i, { frequency: e.target.value })}
+              placeholder="Twice daily"
+              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(i)}
+              aria-label="Remove medication"
+              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
+                <path d="M2 2l10 10M12 2L2 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={addRow}
+          className="mt-1 self-start rounded-md border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50"
+        >
+          + Add medication
+        </button>
+      </div>
+    </ModalFrame>
+  );
+}
+
+function ProblemsEditModal({
+  initial,
+  onSave,
+  onClose,
+}: {
+  initial: Diagnosis[];
+  onSave: (list: Diagnosis[]) => void;
+  onClose: () => void;
+}) {
+  const [list, setList] = useState<Diagnosis[]>(
+    initial.length > 0 ? initial : [{ condition: "", since: "", notes: "" }]
+  );
+  const cleaned = list.filter(nonEmptyRow);
+  const dirty = JSON.stringify(cleaned) !== JSON.stringify(initial);
+
+  function updateRow(i: number, patch: Partial<Diagnosis>) {
+    setList((rows) =>
+      rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+    );
+  }
+  function removeRow(i: number) {
+    setList((rows) => rows.filter((_, idx) => idx !== i));
+  }
+  function addRow() {
+    setList((rows) => [...rows, { condition: "", since: "", notes: "" }]);
+  }
+
+  return (
+    <ModalFrame
+      title="Edit active problems"
+      onClose={onClose}
+      footer={
+        <ModalFooterButtons
+          saveDisabled={!dirty}
+          saveTitle={
+            !dirty
+              ? "No changes to save"
+              : "Apply to draft (you still need to publish)"
+          }
+          onSave={() => onSave(cleaned)}
+          onCancel={onClose}
+        />
+      }
+    >
+      <p className="mb-3 text-xs text-zinc-500">
+        Edit each problem&apos;s condition, onset, and notes. Empty rows are
+        removed on save. Changes only apply to your draft when you click Save.
+      </p>
+      <div className="flex flex-col gap-3">
+        {list.map((dx, i) => (
+          <div key={i} className="rounded-md border border-zinc-200 p-3">
+            <div className="grid grid-cols-[1.4fr_1fr_auto] items-center gap-2">
+              <input
+                value={dx.condition}
+                onChange={(e) => updateRow(i, { condition: e.target.value })}
+                placeholder="Condition"
+                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm font-medium text-zinc-900 focus:border-zinc-500 focus:outline-none"
+              />
+              <input
+                value={dx.since}
+                onChange={(e) => updateRow(i, { since: e.target.value })}
+                placeholder="Since (e.g. 2018)"
+                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                aria-label="Remove problem"
+                className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-red-600"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M2 2l10 10M12 2L2 12" />
+                </svg>
+              </button>
+            </div>
+            <textarea
+              value={dx.notes}
+              onChange={(e) => updateRow(i, { notes: e.target.value })}
+              placeholder="Notes"
+              rows={2}
+              className="mt-2 w-full resize-y rounded-md border border-zinc-300 px-2 py-1.5 text-sm leading-6 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+            />
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={addRow}
+          className="mt-1 self-start rounded-md border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-50"
+        >
+          + Add problem
+        </button>
+      </div>
+    </ModalFrame>
+  );
+}
+
+function ProblemsCard({
+  diagnoses,
+  editing,
+  onOpenEditor,
+  historyAction,
+}: {
+  diagnoses: Diagnosis[];
+  editing: boolean;
+  onOpenEditor: () => void;
+  historyAction?: ReactNode;
+}) {
   return (
     <BentoCard>
-      <CardHeader title="Active problems" />
+      <CardHeader
+        title="Active problems"
+        action={
+          <span className="flex items-center gap-1.5">
+            {historyAction}
+            {editing && <EditFieldButton onClick={onOpenEditor} />}
+          </span>
+        }
+      />
       {diagnoses.length === 0 ? (
         <Empty>No active problems.</Empty>
       ) : (
@@ -790,10 +1633,28 @@ function ProblemsCard({ diagnoses }: { diagnoses: Diagnosis[] }) {
   );
 }
 
-function MedicationsCard({ medications }: { medications: Medication[] }) {
+function MedicationsCard({
+  medications,
+  editing,
+  onOpenEditor,
+  historyAction,
+}: {
+  medications: Medication[];
+  editing: boolean;
+  onOpenEditor: () => void;
+  historyAction?: ReactNode;
+}) {
   return (
     <BentoCard>
-      <CardHeader title="Current medications" />
+      <CardHeader
+        title="Current medications"
+        action={
+          <span className="flex items-center gap-1.5">
+            {historyAction}
+            {editing && <EditFieldButton onClick={onOpenEditor} />}
+          </span>
+        }
+      />
       {medications.length === 0 ? (
         <Empty>No medications recorded.</Empty>
       ) : (
@@ -823,15 +1684,28 @@ function TextCard({
   title,
   content,
   emptyText,
+  editing,
+  onChange,
+  headerAction,
 }: {
   title: string;
   content: string;
   emptyText: string;
+  editing: boolean;
+  onChange: (v: string | null) => void;
+  headerAction?: ReactNode;
 }) {
   return (
     <BentoCard>
-      <CardHeader title={title} />
-      {content ? (
+      <CardHeader title={title} action={headerAction} />
+      {editing ? (
+        <textarea
+          value={content}
+          onChange={(e) => onChange(e.target.value || null)}
+          placeholder={emptyText}
+          className="min-h-[120px] flex-1 resize-y rounded-md border border-zinc-300 px-2 py-1.5 text-sm leading-6 text-zinc-900 focus:border-zinc-500 focus:outline-none"
+        />
+      ) : content ? (
         <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-700">
           {content}
         </p>
@@ -849,9 +1723,15 @@ function TextCard({
 function VitalsCard({
   vitals,
   series,
+  editing,
+  onOpenEditor,
+  historyAction,
 }: {
   vitals: Vitals | null;
   series: VitalSeries;
+  editing: boolean;
+  onOpenEditor: () => void;
+  historyAction?: ReactNode;
 }) {
   const cards: { label: string; value: string; values: number[]; color: string }[] = [
     {
@@ -883,7 +1763,15 @@ function VitalsCard({
   ];
   return (
     <BentoCard>
-      <CardHeader title="Vitals · last 7 days" />
+      <CardHeader
+        title="Vitals · last 7 days"
+        action={
+          <span className="flex items-center gap-1.5">
+            {historyAction}
+            {editing && <EditFieldButton onClick={onOpenEditor} />}
+          </span>
+        }
+      />
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-2">
         {cards.map((c) => (
           <div
@@ -1096,6 +1984,82 @@ function NoteModal({
         <pre className="flex-1 overflow-auto whitespace-pre-wrap px-5 py-4 font-mono text-sm leading-6 text-zinc-900">
           {note}
         </pre>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Unsaved-changes confirmation modal
+// ---------------------------------------------------------------------------
+
+function UnsavedChangesModal({
+  isPublishing,
+  onSaveAndContinue,
+  onDiscardAndContinue,
+  onStay,
+}: {
+  isPublishing: boolean;
+  onSaveAndContinue: () => void;
+  onDiscardAndContinue: () => void;
+  onStay: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !isPublishing) onStay();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isPublishing, onStay]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="unsaved-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4 backdrop-blur-[2px]"
+      onClick={() => {
+        if (!isPublishing) onStay();
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[400px] rounded-xl border border-zinc-200 bg-white p-5 shadow-xl"
+      >
+        <h3 id="unsaved-title" className="text-base font-semibold text-zinc-900">
+          You have unsaved changes
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-zinc-600">
+          You haven&apos;t published your edits to this patient&apos;s record.
+          What would you like to do?
+        </p>
+        <div className="mt-5 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={onSaveAndContinue}
+            disabled={isPublishing}
+            autoFocus
+            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60"
+          >
+            {isPublishing ? "Publishing…" : "Save & continue"}
+          </button>
+          <button
+            type="button"
+            onClick={onDiscardAndContinue}
+            disabled={isPublishing}
+            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
+          >
+            Discard & continue
+          </button>
+          <button
+            type="button"
+            onClick={onStay}
+            disabled={isPublishing}
+            className="rounded-md px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-50"
+          >
+            Stay on page
+          </button>
+        </div>
       </div>
     </div>
   );

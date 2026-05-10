@@ -66,6 +66,7 @@ export type ViewerSnapshot = {
   doctor_id: string;
   patient_id: string;
   snapshot_at: string;
+  snapshot: Partial<EditableValueMap> | null;
 };
 
 export type PatientDocument = {
@@ -84,6 +85,52 @@ export type GetPatientResponse = {
   is_first_view: boolean;
   documents: PatientDocument[];
   visits: Visit[];
+};
+
+export const EDITABLE_FIELDS = [
+  "synopsis",
+  "current_presentation",
+  "active_diagnoses",
+  "current_medications",
+  "recent_vitals",
+  "treatment_plan",
+  "long_term_goals",
+] as const;
+export type EditableField = (typeof EDITABLE_FIELDS)[number];
+
+export type EditableValueMap = {
+  synopsis: string | null;
+  current_presentation: string | null;
+  active_diagnoses: Diagnosis[];
+  current_medications: Medication[];
+  recent_vitals: Vitals | null;
+  treatment_plan: string | null;
+  long_term_goals: string | null;
+};
+
+export type PublishEditsResponse = {
+  current_state: PatientState;
+  changed_fields: EditableField[];
+};
+
+export type FieldChange = {
+  id: string;
+  before_value: unknown;
+  after_value: unknown;
+  changed_by: string | null;
+  changed_by_name: string | null;
+  changed_at: string;
+  source: "edit";
+};
+
+export type FieldChangesResponse = {
+  changes: FieldChange[];
+};
+
+export type FieldChangeCounts = Record<EditableField, number>;
+
+export type FieldChangeCountsResponse = {
+  counts: FieldChangeCounts;
 };
 
 export function getStoredDoctor(): Doctor | null {
@@ -134,4 +181,14 @@ export async function api<T = unknown>(
     throw new ApiError(String(message), res.status);
   }
   return data as T;
+}
+
+export function getFieldChanges(patientId: string, field: EditableField) {
+  return api<FieldChangesResponse>(
+    `/api/patients/${patientId}/changes?field=${encodeURIComponent(field)}`
+  );
+}
+
+export function getFieldChangeCounts(patientId: string) {
+  return api<FieldChangeCountsResponse>(`/api/patients/${patientId}/changes`);
 }

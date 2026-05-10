@@ -116,3 +116,21 @@ create table if not exists doctor_patient_chats (
   updated_at  timestamptz not null default now(),
   primary key (doctor_id, patient_id)
 );
+
+-- ---------------------------------------------------------------------------
+-- 8. patient_field_changes (append-only changelog of manual edits)
+-- ---------------------------------------------------------------------------
+create table if not exists patient_field_changes (
+  id           uuid primary key default gen_random_uuid(),
+  patient_id   uuid not null references patients(id) on delete cascade,
+  field        text not null,
+  before_value jsonb,
+  after_value  jsonb,
+  changed_by   uuid references doctors(id),
+  changed_at   timestamptz not null default now(),
+  source       text not null default 'edit'
+                 check (source in ('edit'))
+);
+
+create index if not exists patient_field_changes_lookup_idx
+  on patient_field_changes (patient_id, field, changed_at desc);

@@ -147,7 +147,7 @@ export default function PatientDetailPage({ params }: Props) {
               {error}
             </div>
           ) : data?.patient ? (
-            <Bento data={data} onChange={loadPatient} stacked={isChatOpen} />
+            <Bento data={data} onChange={loadPatient} />
           ) : null}
         </main>
       </div>
@@ -396,11 +396,9 @@ function ChatSidebar({
 function Bento({
   data,
   onChange,
-  stacked = false,
 }: {
   data: GetPatientResponse;
   onChange: () => void;
-  stacked?: boolean;
 }) {
   const { patient } = data;
   const state = data.current_state;
@@ -408,9 +406,7 @@ function Bento({
   const labs = useMemo(() => mockLabs(patient.id), [patient.id]);
 
   return (
-    <div
-      className={`grid gap-3 ${stacked ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-12"}`}
-    >
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
       {/* Row 1: header + medications + long-term goals */}
       <div className="lg:col-span-6">
         <PatientHeaderCard patient={patient} synopsis={state?.synopsis ?? ""} />

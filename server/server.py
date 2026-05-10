@@ -557,5 +557,253 @@ def finalize_visit(visit_id):
     return jsonify({"ok": True})
 
 
+# ---------------------------------------------------------------------------
+# Chatbot — per-doctor, per-patient assistant grounded in record + documents
+# ---------------------------------------------------------------------------
+
+CHAT_SYSTEM_PROMPT = (
+    "You are answering a colleague's questions about ONE patient. Speak like a "
+    "doctor talking to another doctor at the bedside — terse, clinical, no "
+    "fluff.\n\n"
+    "STYLE — non-negotiable:\n"
+    "- Plain prose only. NO markdown tables, NO bullet lists, NO bold headers, "
+    "  NO numbered sections. Sentences and semicolon-separated fragments only.\n"
+    "- ≤2 sentences (or ≤40 words) for most answers. Longer only if the "
+    "  question explicitly demands it (e.g. 'walk me through the hospital "
+    "  course').\n"
+    "- Clinical shorthand is fine: BID, PRN, p/w, hx, IV, etc. Drop filler "
+    "  phrases like 'Based on the record,' or 'The patient is currently…'.\n"
+    "- Cite the source inline and briefly when relevant: '(per discharge "
+    "  summary)', '(visit 2026-05-09)', '(med list)'. No long preambles.\n"
+    "- Don't restate the question. Just answer.\n\n"
+    "GROUNDING — non-negotiable:\n"
+    "- Use ONLY the structured record, prior visit transcripts, and uploaded "
+    "  documents provided.\n"
+    "- If the answer isn't explicitly there, reply exactly: \"Not in the "
+    "  record.\" and stop.\n"
+    "- Do not infer, generalize, or fill gaps with clinical knowledge."
+)
+
+CHAT_DOC_MIME_DOCUMENT = {"application/pdf"}
+CHAT_DOC_MIME_IMAGE = {"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"}
+
+
+def build_chat_context(patient_id):
+    """
+    Returns (doc_content_blocks, context_text).
+    - doc_content_blocks: Anthropic content blocks for PDFs/images (passed natively).
+    - context_text: structured patient record + visit transcripts as text.
+    """
+    patient_row = db_call(
+        supabase.table("patients").select("*").eq("id", patient_id).limit(1).execute
+    )
+    patient = patient_row.data[0] if patient_row.data else {}
+
+    state_row = db_call(
+        supabase.table("patient_state")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .limit(1)
+        .execute
+    )
+    state = state_row.data[0] if state_row.data else {}
+
+    visits_row = db_call(
+        supabase.table("visits")
+        .select("id, started_at, ended_at, transcript, doctor_id")
+        .eq("patient_id", patient_id)
+        .eq("status", "complete")
+        .order("started_at", desc=False)
+        .execute
+    )
+    visits = visits_row.data or []
+
+    docs_row = db_call(
+        supabase.table("patient_documents")
+        .select("id, filename, mime_type, file_data, uploaded_at")
+        .eq("patient_id", patient_id)
+        .order("uploaded_at", desc=False)
+        .execute
+    )
+    documents = docs_row.data or []
+
+    doc_blocks = []
+    doc_summaries = []
+    for doc in documents:
+        mime = (doc.get("mime_type") or "").lower()
+        data = doc.get("file_data")
+        filename = doc.get("filename") or "document"
+        if not data:
+            continue
+        if mime in CHAT_DOC_MIME_DOCUMENT:
+            doc_blocks.append({
+                "type": "document",
+                "source": {"type": "base64", "media_type": "application/pdf", "data": data},
+                "title": filename,
+            })
+            doc_summaries.append(f"- {filename} (PDF)")
+        elif mime in CHAT_DOC_MIME_IMAGE:
+            media_type = "image/jpeg" if mime == "image/jpg" else mime
+            doc_blocks.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": data},
+            })
+            doc_summaries.append(f"- {filename} ({mime})")
+        else:
+            doc_summaries.append(f"- {filename} (skipped — unsupported type {mime or 'unknown'})")
+
+    patient_profile = {
+        "name": patient.get("name"),
+        "dob": patient.get("dob"),
+        "sex": patient.get("sex"),
+        "height_cm": patient.get("height_cm"),
+        "weight_kg": patient.get("weight_kg"),
+        "admitted_at": patient.get("admitted_at"),
+    }
+
+    parts = [
+        "PATIENT_PROFILE:",
+        json.dumps(patient_profile, indent=2, default=str),
+        "",
+        "STRUCTURED_RECORD (current source of truth):",
+        json.dumps(state_subset(state), indent=2, default=str),
+        "",
+    ]
+    if visits:
+        parts.append("VISIT_TRANSCRIPTS (chronological, oldest first):")
+        for v in visits:
+            transcript = (v.get("transcript") or "").strip()
+            if not transcript:
+                continue
+            parts.append(f"--- visit {v.get('started_at')} ---")
+            parts.append(transcript)
+        parts.append("")
+    if doc_summaries:
+        parts.append("UPLOADED_DOCUMENTS (attached as content blocks above):")
+        parts.extend(doc_summaries)
+
+    return doc_blocks, "\n".join(parts)
+
+
+def get_chat_row(doctor_id, patient_id):
+    result = db_call(
+        supabase.table("doctor_patient_chats")
+        .select("messages, updated_at")
+        .eq("doctor_id", doctor_id)
+        .eq("patient_id", patient_id)
+        .limit(1)
+        .execute
+    )
+    if not result.data:
+        return [], None
+    row = result.data[0]
+    return (row.get("messages") or []), row.get("updated_at")
+
+
+@app.route("/api/patients/<patient_id>/chat", methods=["GET"])
+def get_chat(patient_id):
+    doctor, err = require_doctor()
+    if err:
+        return err
+    messages, updated_at = get_chat_row(doctor["id"], patient_id)
+    return jsonify({"messages": messages, "updated_at": updated_at})
+
+
+@app.route("/api/patients/<patient_id>/chat", methods=["POST"])
+def post_chat(patient_id):
+    doctor, err = require_doctor()
+    if err:
+        return err
+    if not anthropic_client:
+        return jsonify({"error": "chat unavailable: ANTHROPIC_API_KEY not set"}), 503
+
+    body = request.get_json(silent=True) or {}
+    question = (body.get("message") or "").strip()
+    if not question:
+        return jsonify({"error": "message required"}), 400
+
+    history, _ = get_chat_row(doctor["id"], patient_id)
+    doc_blocks, context_text = build_chat_context(patient_id)
+
+    primer_content = list(doc_blocks)
+    primer_content.append({
+        "type": "text",
+        "text": (
+            f"{context_text}\n\n"
+            "I will now ask questions about this patient. Use only the materials "
+            "above. If the answer is not present, say so."
+        ),
+    })
+
+    claude_messages = [
+        {"role": "user", "content": primer_content},
+        {
+            "role": "assistant",
+            "content": (
+                "Understood. I will answer using only the patient's record, the "
+                "uploaded documents, and the visit transcripts above. What would "
+                "you like to know?"
+            ),
+        },
+    ]
+    for h in history:
+        role = h.get("role")
+        content = h.get("content")
+        if role in ("user", "assistant") and isinstance(content, str) and content:
+            claude_messages.append({"role": role, "content": content})
+    claude_messages.append({"role": "user", "content": question})
+
+    try:
+        response = anthropic_client.messages.create(
+            model=LLM_MODEL,
+            max_tokens=1024,
+            system=CHAT_SYSTEM_PROMPT,
+            messages=claude_messages,
+        )
+    except anthropic.APIError as e:
+        return jsonify({"error": f"chat failed: {e}"}), 502
+
+    answer = next(
+        (b.text for b in response.content if getattr(b, "type", "") == "text"),
+        "",
+    ).strip()
+    if not answer:
+        answer = "I don't see that in the patient's record."
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    new_history = [
+        *history,
+        {"role": "user", "content": question, "timestamp": now_iso},
+        {"role": "assistant", "content": answer, "timestamp": now_iso},
+    ]
+    db_call(
+        supabase.table("doctor_patient_chats")
+        .upsert({
+            "doctor_id": doctor["id"],
+            "patient_id": patient_id,
+            "messages": new_history,
+            "updated_at": now_iso,
+        })
+        .execute
+    )
+
+    return jsonify({"answer": answer, "messages": new_history})
+
+
+@app.route("/api/patients/<patient_id>/chat", methods=["DELETE"])
+def clear_chat(patient_id):
+    doctor, err = require_doctor()
+    if err:
+        return err
+    db_call(
+        supabase.table("doctor_patient_chats")
+        .delete()
+        .eq("doctor_id", doctor["id"])
+        .eq("patient_id", patient_id)
+        .execute
+    )
+    return jsonify({"ok": True})
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=8080)

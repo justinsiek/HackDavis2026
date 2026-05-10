@@ -101,3 +101,14 @@ create table if not exists patient_documents (
 
 create index if not exists patient_documents_patient_idx
   on patient_documents (patient_id, uploaded_at desc);
+
+-- ---------------------------------------------------------------------------
+-- 7. doctor_patient_chats (per-doctor, per-patient chatbot history)
+-- ---------------------------------------------------------------------------
+create table if not exists doctor_patient_chats (
+  doctor_id   uuid not null references doctors(id) on delete cascade,
+  patient_id  uuid not null references patients(id) on delete cascade,
+  messages    jsonb not null default '[]'::jsonb,
+  updated_at  timestamptz not null default now(),
+  primary key (doctor_id, patient_id)
+);

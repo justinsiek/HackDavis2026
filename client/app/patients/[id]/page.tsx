@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -298,7 +299,7 @@ export default function PatientDetailPage({ params }: Props) {
         setPendingNav(() => () => router.push("/patients"));
       }}
       className="flex items-center gap-1.5 text-sm transition-colors hover:opacity-70"
-      style={{ color: "var(--text-1)" }}
+      style={{ color: "var(--accent)" }}
     >
       ← All patients
     </Link>
@@ -935,6 +936,28 @@ function Bento({
         />
       </div>
       <div className="lg:col-span-4">
+        <TextCard
+          title="Subjective"
+          content={state?.current_presentation ?? ""}
+          emptyText="Nothing reported yet."
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("current_presentation", v)}
+          headerAction={history("current_presentation")}
+        />
+      </div>
+      <div className="lg:col-span-4">
+        <LongTermGoalCard
+          patientId={patient.id}
+          admittedAt={patient.admitted_at}
+          content={state?.long_term_goals ?? ""}
+          editing={isEditing}
+          onChange={(v) => onTextFieldChange("long_term_goals", v)}
+          headerAction={history("long_term_goals")}
+        />
+      </div>
+
+      {/* Row 3: medications · vitals · labs · documents — 25/25/25/25 */}
+      <div className="lg:col-span-3">
         <MedicationsCard
           medications={state?.current_medications ?? []}
           editing={isEditing}
@@ -947,27 +970,7 @@ function Bento({
           historyAction={history("current_medications")}
         />
       </div>
-      <div className="flex flex-col gap-3 lg:col-span-4">
-        <TextCard
-          title="Subjective"
-          content={state?.current_presentation ?? ""}
-          emptyText="Nothing reported yet."
-          editing={isEditing}
-          onChange={(v) => onTextFieldChange("current_presentation", v)}
-          headerAction={history("current_presentation")}
-        />
-        <TextCard
-          title="Long-term goals"
-          content={state?.long_term_goals ?? ""}
-          emptyText="No long-term goals set."
-          editing={isEditing}
-          onChange={(v) => onTextFieldChange("long_term_goals", v)}
-          headerAction={history("long_term_goals")}
-        />
-      </div>
-
-      {/* Row 3: vitals · labs · documents */}
-      <div className="lg:col-span-4">
+      <div className="lg:col-span-3">
         <VitalsCard
           vitals={state?.recent_vitals ?? null}
           series={vitalsSeries}
@@ -991,10 +994,10 @@ function Bento({
           historyAction={history("recent_vitals")}
         />
       </div>
-      <div className="lg:col-span-4">
+      <div className="lg:col-span-3">
         <LabsCard labs={labs} />
       </div>
-      <div className="lg:col-span-4">
+      <div className="lg:col-span-3">
         <DocumentsCard
           patientId={patient.id}
           documents={data.documents}
@@ -1045,7 +1048,7 @@ function CardHeader({
   action,
   className = "",
 }: {
-  title: string;
+  title: ReactNode;
   action?: ReactNode;
   className?: string;
 }) {
@@ -1099,7 +1102,10 @@ function HistoryButton({
       title={title}
       aria-label={title}
       className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-bold transition-colors hover:bg-slate-100"
-      style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
+      style={{
+        border: count > 0 ? "1px solid rgba(71,128,255,0.35)" : "1px solid var(--border-strong)",
+        color: count > 0 ? "var(--accent)" : "var(--text-3)",
+      }}
     >
       <svg
         width="12"
@@ -1244,7 +1250,7 @@ function WatchForSection({ items }: { items: string[] | null }) {
       >
         <span
           className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider"
-          style={{ color: "var(--text-1)" }}
+          style={{ color: "var(--accent)" }}
         >
           <svg
             width="10"
@@ -1966,13 +1972,13 @@ function ProblemsCard({
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-bold" style={{ color: "var(--text-1)" }}>{d.condition}</span>
                 {d.since && (
-                  <span className="shrink-0 text-xs" style={{ color: "var(--text-1)" }}>
+                  <span className="shrink-0 text-xs" style={{ color: "var(--accent)" }}>
                     since {d.since}
                   </span>
                 )}
               </div>
               {d.notes && (
-                <p className="mt-1 text-sm leading-6" style={{ color: "var(--text-1)" }}>
+                <p className="mt-1 text-sm leading-6" style={{ color: "var(--text-2)" }}>
                   {d.notes}
                 </p>
               )}
@@ -2018,11 +2024,11 @@ function MedicationsCard({
               {(m.dose || m.frequency) && (
                 <div
                   className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-5"
-                  style={{ color: "var(--text-1)" }}
+                  style={{ color: "var(--text-3)" }}
                 >
                   {m.dose && <span className="tracking-tight">{m.dose}</span>}
                   {m.dose && m.frequency && (
-                    <span style={{ color: "var(--text-1)" }}>·</span>
+                    <span style={{ color: "var(--text-3)" }}>·</span>
                   )}
                   {m.frequency && <span>{m.frequency}</span>}
                 </div>
@@ -2071,6 +2077,300 @@ function TextCard({
         </p>
       ) : (
         <Empty>{emptyText}</Empty>
+      )}
+    </BentoCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Long-term goal journey card
+// ---------------------------------------------------------------------------
+
+const TRACK_H = 220; // px — fixed height of the expanded timeline container
+
+function LongTermGoalCard({
+  patientId,
+  admittedAt,
+  content,
+  editing,
+  onChange,
+  headerAction,
+}: {
+  patientId: string;
+  admittedAt: string;
+  content: string;
+  editing: boolean;
+  onChange: (v: string | null) => void;
+  headerAction?: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Deterministic mock progress (30–76%) seeded by patient ID so it's stable
+  const progress = useMemo(() => {
+    let h = 0;
+    for (const ch of patientId) h = (h * 31 + ch.charCodeAt(0)) & 0xffff;
+    return 30 + (h % 47);
+  }, [patientId]);
+
+  // Count-up animation for the % display inside the expanded timeline
+  const [liveProgress, setLiveProgress] = useState(0);
+  useEffect(() => {
+    if (!expanded) { setLiveProgress(0); return; }
+    const t0 = performance.now();
+    const dur = 1100;
+    let raf: number;
+    const tick = (now: number) => {
+      const t = Math.min((now - t0) / dur, 1);
+      const ease = 1 - (1 - t) ** 3;
+      setLiveProgress(Math.round(ease * progress));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [expanded, progress]);
+
+  const admitDate = new Date(admittedAt).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  });
+
+  // Track geometry (pixels)
+  const PAD = 14; // top + bottom padding inside TRACK_H for dots
+  const trackLen = TRACK_H - PAD * 2;
+  // How far the filled line extends from the bottom node upward
+  const fillH = trackLen * (progress / 100);
+  // Y-coordinate from top of container for the "current" dot center
+  const dotTopFromTop = PAD + trackLen * (1 - progress / 100);
+
+  if (editing) {
+    return (
+      <BentoCard>
+        <CardHeader title="Long-term goals" action={headerAction} />
+        <textarea
+          value={content}
+          onChange={(e) => onChange(e.target.value || null)}
+          placeholder="No long-term goals set."
+          className="min-h-[120px] flex-1 resize-y rounded-lg px-2 py-1.5 text-sm leading-6 outline-none"
+          style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)", background: "var(--bg)" }}
+        />
+      </BentoCard>
+    );
+  }
+
+  return (
+    <BentoCard>
+      <CardHeader title="Long-term goals" action={headerAction} />
+
+      {!content ? (
+        <Empty>No long-term goals set.</Empty>
+      ) : (
+        <div className="flex flex-col flex-1">
+          {/* Goal text */}
+          <p className="text-sm leading-6 mb-4" style={{ color: "var(--text-1)" }}>
+            {content}
+          </p>
+
+          {/* ── Clickable progress bar ── */}
+          <button
+            type="button"
+            onClick={() => setExpanded((o) => !o)}
+            className="w-full text-left"
+            aria-expanded={expanded}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
+                {progress}% toward goal
+              </span>
+              <motion.span
+                animate={{ rotate: expanded ? 180 : 0 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                style={{ color: "var(--text-3)", fontSize: 11, display: "inline-block" }}
+              >
+                ▾
+              </motion.span>
+            </div>
+
+            {/* Bar track */}
+            <div
+              className="h-2 w-full rounded-full overflow-hidden"
+              style={{ background: "var(--accent-light)" }}
+            >
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: "var(--accent)" }}
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 1.3, ease: [0.16, 1, 0.3, 1] }}
+              />
+            </div>
+
+            <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
+              {expanded ? "Collapse journey" : "See the full journey →"}
+            </p>
+          </button>
+
+          {/* ── Expanded vertical timeline ── */}
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                key="goal-timeline"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                style={{ overflow: "hidden" }}
+              >
+                <div
+                  className="relative mt-6"
+                  style={{ height: TRACK_H }}
+                >
+                  {/* ── Track line (unfilled, full height) ── */}
+                  <div
+                    className="absolute rounded-full"
+                    style={{
+                      left: 7, top: PAD, width: 2,
+                      height: trackLen,
+                      background: "var(--accent-light)",
+                    }}
+                  />
+
+                  {/* ── Track fill (grows upward from start node) ── */}
+                  <div
+                    className="absolute rounded-full overflow-hidden"
+                    style={{
+                      left: 7,
+                      bottom: PAD,
+                      width: 2,
+                      height: fillH,
+                    }}
+                  >
+                    <motion.div
+                      style={{
+                        width: "100%", height: "100%",
+                        background: "var(--accent)",
+                        transformOrigin: "bottom",
+                      }}
+                      initial={{ scaleY: 0 }}
+                      animate={{ scaleY: 1 }}
+                      transition={{ duration: 1.3, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
+                    />
+                  </div>
+
+                  {/* ── Goal node (top) ── */}
+                  <motion.div
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 280, damping: 18, delay: 0.1 }}
+                    className="absolute rounded-full"
+                    style={{
+                      left: 2, top: PAD - 6,
+                      width: 14, height: 14,
+                      background: "var(--accent)",
+                    }}
+                  />
+
+                  {/* ── Current-position pulsing dot ── */}
+                  <motion.div
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 220, damping: 16, delay: 0.55 }}
+                    className="absolute rounded-full"
+                    style={{
+                      left: 0, top: dotTopFromTop - 9,
+                      width: 18, height: 18,
+                      background: "var(--accent)",
+                      border: "3px solid white",
+                    }}
+                  >
+                    {/* Ring pulse */}
+                    <motion.div
+                      className="absolute inset-0 rounded-full"
+                      animate={{
+                        boxShadow: [
+                          "0 0 0 0px rgba(71,128,255,0.45)",
+                          "0 0 0 10px rgba(71,128,255,0)",
+                          "0 0 0 0px rgba(71,128,255,0)",
+                        ],
+                      }}
+                      transition={{ duration: 2.2, repeat: Infinity, delay: 0.9 }}
+                    />
+                  </motion.div>
+
+                  {/* ── Start node (bottom) ── */}
+                  <motion.div
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 280, damping: 18, delay: 0.2 }}
+                    className="absolute rounded-full"
+                    style={{
+                      left: 2, bottom: PAD - 6,
+                      width: 14, height: 14,
+                      background: "#fff",
+                      border: "2px solid var(--border-strong)",
+                    }}
+                  />
+
+                  {/* ── Label: Goal (top-right) ── */}
+                  <motion.div
+                    initial={{ x: 10, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.15, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute"
+                    style={{ left: 28, top: 0 }}
+                  >
+                    <div
+                      className="text-[10px] font-bold uppercase tracking-widest mb-0.5"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      Goal
+                    </div>
+                    <p
+                      className="text-sm font-medium leading-snug"
+                      style={{ color: "var(--text-1)", maxWidth: 160 }}
+                    >
+                      {content}
+                    </p>
+                  </motion.div>
+
+                  {/* ── Label: Current % (beside pulsing dot) ── */}
+                  <motion.div
+                    initial={{ x: 10, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.6, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute flex items-baseline gap-1"
+                    style={{ left: 28, top: dotTopFromTop - 14 }}
+                  >
+                    <span
+                      className="text-2xl font-bold tabular-nums leading-none"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      {liveProgress}
+                    </span>
+                    <span className="text-sm font-semibold" style={{ color: "var(--accent)" }}>%</span>
+                  </motion.div>
+
+                  {/* ── Label: Start (bottom-right) ── */}
+                  <motion.div
+                    initial={{ x: 10, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.25, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute"
+                    style={{ left: 28, bottom: 0 }}
+                  >
+                    <div
+                      className="text-[10px] font-bold uppercase tracking-widest mb-0.5"
+                      style={{ color: "var(--text-3)" }}
+                    >
+                      Start · {admitDate}
+                    </div>
+                    <p className="text-sm leading-snug" style={{ color: "var(--text-2)" }}>
+                      Baseline assessment on admission
+                    </p>
+                  </motion.div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       )}
     </BentoCard>
   );
@@ -2140,7 +2440,7 @@ function VitalsCard({
             style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
           >
             <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-1)" }}>
+              <div className={`text-[10px] font-bold uppercase tracking-wider ${c.color}`}>
                 {c.label}
               </div>
               <div className="text-lg font-bold leading-tight tracking-tight" style={{ color: "var(--text-1)" }}>
@@ -2168,7 +2468,14 @@ function LabsCard({ labs }: { labs: Lab[] }) {
   return (
     <BentoCard>
       <CardHeader
-        title={`Labs · ${abnormalCount} abnormal`}
+        title={
+          <span>
+            Labs
+            {abnormalCount > 0 && (
+              <span style={{ color: "var(--accent)" }}> · {abnormalCount} abnormal</span>
+            )}
+          </span>
+        }
       />
       <ul className="min-h-0 flex-1 divide-y overflow-hidden text-sm" style={{ borderColor: "var(--border)" }}>
         {labs.map((l) => (
@@ -2179,21 +2486,21 @@ function LabsCard({ labs }: { labs: Lab[] }) {
             <span className="w-24 shrink-0" style={{ color: "var(--text-1)" }}>{l.name}</span>
             <span
               className="flex-1 truncate text-right tabular-nums font-bold inline-flex items-center justify-end gap-1.5"
-              style={{ color: "var(--text-1)" }}
+              style={{ color: l.abnormal ? "#EF4444" : "var(--text-1)" }}
             >
               {l.abnormal && (
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
               )}
               {l.value} {l.unit}
             </span>
-            <span className="hidden w-16 shrink-0 text-right text-xs sm:block" style={{ color: "var(--text-1)" }}>
+            <span className="hidden w-16 shrink-0 text-right text-xs sm:block" style={{ color: "var(--text-3)" }}>
               {l.range}
             </span>
             <Sparkline
               values={l.trend}
               width={48}
               height={18}
-              className={l.abnormal ? "text-[#EF4444]" : "text-[#0F172A]"}
+              className={l.abnormal ? "text-[#EF4444]" : "text-[#94A3B8]"}
             />
           </li>
         ))}
@@ -2536,8 +2843,8 @@ function DocumentsCard({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy}
-            className="rounded-lg px-2.5 py-1 text-xs font-bold transition-colors hover:bg-slate-100 disabled:opacity-60"
-            style={{ border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
+            className="rounded-lg px-2.5 py-1 text-xs font-bold transition-colors hover:opacity-80 disabled:opacity-60"
+            style={{ border: "1px solid rgba(71,128,255,0.35)", color: "var(--accent)" }}
           >
             {busy ? "Uploading…" : "+ Upload"}
           </button>

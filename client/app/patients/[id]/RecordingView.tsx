@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DeepgramClient } from "@deepgram/sdk";
 import { api, Patient } from "@/lib/api";
+import { motion } from "framer-motion";
+import SoftOrb from "@/components/SoftOrb";
+import { useMicAmplitude } from "@/lib/useMicAmplitude";
 
 type Props = {
   patient: Patient;
@@ -29,25 +32,14 @@ type Turn = {
   text: string;
 };
 
-const SPEAKER_STYLES: { label: string; bubble: string; dot: string }[] = [
-  { label: "text-[#0F172A]", bubble: "bg-[#EFF6FF] ring-[#BFDBFE]", dot: "#3B82F6" },
-  { label: "text-[#0F172A]", bubble: "bg-[#ECFDF5] ring-[#A7F3D0]", dot: "#10B981" },
-  { label: "text-[#0F172A]", bubble: "bg-[#F5F3FF] ring-[#DDD6FE]", dot: "#8B5CF6" },
-  { label: "text-[#0F172A]", bubble: "bg-[#FFFBEB] ring-[#FDE68A]", dot: "#F59E0B" },
-];
+type FloatingWord = {
+  id: number;
+  text: string;
+  x: number;
+  xEnd: number;
+  yStart: number;
+};
 
-function speakerStyle(speaker: number, doctorSpeaker: number | null) {
-  // If we know who the doctor is, lock styles: doctor → first style, patient → second.
-  if (doctorSpeaker !== null) {
-    return speaker === doctorSpeaker ? SPEAKER_STYLES[0] : SPEAKER_STYLES[1];
-  }
-  return SPEAKER_STYLES[speaker % SPEAKER_STYLES.length];
-}
-
-function speakerLabel(speaker: number, doctorSpeaker: number | null): string {
-  if (doctorSpeaker === null) return `Speaker ${speaker}`;
-  return speaker === doctorSpeaker ? "Doctor" : "Patient";
-}
 
 function wordsToTurns(words: Word[]): Turn[] {
   const turns: Turn[] = [];
@@ -91,12 +83,18 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
   const [interimText, setInterimText] = useState("");
   const [doctorSpeaker, setDoctorSpeaker] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [floatingWords, setFloatingWords] = useState<FloatingWord[]>([]);
+
+  const amplitude = useMicAmplitude(stream, status === "recording");
 
   const dgRef = useRef<DGSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const accumulatedMsRef = useRef(0);
   const segmentStartRef = useRef<number | null>(null);
+  const floatingWordIdRef = useRef(0);
+  const prevInterimWordCountRef = useRef(0);
 
   // Boot: open mic + Deepgram WS, start recording.
   useEffect(() => {
@@ -116,6 +114,7 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
           return;
         }
         mediaStreamRef.current = stream;
+        setStream(stream);
 
         const client = new DeepgramClient({ apiKey: DEEPGRAM_API_KEY });
         const socket = await client.listen.v1.connect({
@@ -210,6 +209,33 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
     };
   }, [status]);
 
+  // Float new words upward as they appear in the interim transcript.
+  useEffect(() => {
+    const words = interimText.trim().split(/\s+/).filter(Boolean);
+    const prevCount = prevInterimWordCountRef.current;
+
+    if (!interimText) {
+      prevInterimWordCountRef.current = 0;
+      return;
+    }
+    if (words.length <= prevCount) return;
+
+    const newWords = words.slice(prevCount);
+    prevInterimWordCountRef.current = words.length;
+
+    newWords.forEach((word, i) => {
+      const id = floatingWordIdRef.current++;
+      const x = (Math.random() - 0.5) * 340;
+      const xEnd = x + (Math.random() - 0.5) * 60;
+      const yStart = 50 + Math.random() * 80;
+      const delay = i * 220;
+      setTimeout(() => {
+        setFloatingWords((fw) => [...fw.slice(-30), { id, text: word, x, xEnd, yStart }]);
+        setTimeout(() => setFloatingWords((fw) => fw.filter((w) => w.id !== id)), 4200);
+      }, delay);
+    });
+  }, [interimText]);
+
   const togglePause = useCallback(() => {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
@@ -253,9 +279,15 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
   async function handleDone() {
     setStatus("saving");
     cleanup();
-    const transcriptParts = finalTurns.map(
-      (t) => `${speakerLabel(t.speaker, doctorSpeaker)}: ${t.text}`
-    );
+    const transcriptParts = finalTurns.map((t) => {
+      const label =
+        doctorSpeaker === null
+          ? `Speaker ${t.speaker}`
+          : t.speaker === doctorSpeaker
+            ? "Doctor"
+            : "Patient";
+      return `${label}: ${t.text}`;
+    });
     const tail = interimText.trim();
     if (tail) transcriptParts.push(tail);
     const transcript = transcriptParts.join("\n");
@@ -272,8 +304,6 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
       setStatus("error");
     }
   }
-
-  const hasAnyText = finalTurns.length > 0 || interimText.length > 0;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -294,45 +324,52 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
-        <div className="min-h-[300px] rounded-xl bg-white p-6 shadow-sm ring-1 ring-zinc-200">
-          {hasAnyText ? (
-            <div className="space-y-3">
-              {doctorSpeaker !== null && (
-                <div className="flex justify-end">
-                  <button
-                    onClick={() =>
-                      setDoctorSpeaker((curr) => (curr === null ? null : 1 - curr))
-                    }
-                    className="text-xs text-[#0F172A] underline-offset-2 hover:text-[#0F172A] hover:underline"
-                  >
-                    Swap doctor / patient
-                  </button>
-                </div>
-              )}
-              {finalTurns.map((turn, i) => (
-                <TurnLine
-                  key={`f-${i}`}
-                  turn={turn}
-                  doctorSpeaker={doctorSpeaker}
-                />
-              ))}
-              {interimText && (
-                <p className="px-3 text-base italic leading-7 text-[#0F172A]">
-                  {interimText}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm italic text-[#0F172A]">
-              {status === "connecting" ? "Connecting…" : "Start speaking…"}
-            </p>
-          )}
+      <main className="mx-auto w-full max-w-3xl flex-1 flex flex-col items-center justify-center px-6 py-8">
+        {/* Orb + floating words canvas */}
+        <div className="relative flex items-center justify-center" style={{ width: 360, height: 420 }}>
+          {/* Floating words */}
+          {floatingWords.map((w) => (
+            <motion.span
+              key={w.id}
+              initial={{ opacity: 0, y: w.yStart, x: w.x }}
+              animate={{ opacity: [0, 0.85, 0.65, 0], y: w.yStart - 260, x: w.xEnd }}
+              transition={{ duration: 4, ease: "easeOut", times: [0, 0.1, 0.68, 1] }}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                marginLeft: "-50%",
+                width: "100%",
+                textAlign: "center",
+                fontSize: 15,
+                fontWeight: 500,
+                color: "#4780ff",
+                whiteSpace: "nowrap",
+                pointerEvents: "none",
+                letterSpacing: "0.01em",
+              }}
+            >
+              {w.text}
+            </motion.span>
+          ))}
+
+          {/* Orb — centered in the lower portion so words have room above */}
+          <div style={{ position: "absolute", bottom: 20 }}>
+            <SoftOrb
+              amplitude={amplitude}
+              state={status === "saving" ? "connecting" : status}
+              size={260}
+            />
+          </div>
+        </div>
+
+        <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-[#9AA3BA]">
+          Clair
         </div>
 
         {errorMessage && (
           <div
-            className="mt-4 flex items-start gap-2 rounded-md px-4 py-3 text-sm"
+            className="mt-6 flex items-start gap-2 rounded-md px-4 py-3 text-sm max-w-sm w-full"
             style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#0F172A" }}
           >
             <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#EF4444" }} />
@@ -340,8 +377,8 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
           </div>
         )}
 
-        <div className="mt-6 flex items-center justify-between">
-          <p className="text-sm text-[#0F172A]">
+        <div className="mt-10 flex w-full max-w-sm items-center justify-between">
+          <p className="text-sm text-[#637089]">
             Press{" "}
             <kbd className="rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 font-mono text-xs">
               Space
@@ -352,14 +389,14 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
             <button
               onClick={togglePause}
               disabled={status !== "recording" && status !== "paused"}
-              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm text-[#0F172A] hover:bg-zinc-50 disabled:opacity-50"
+              className="rounded-full border border-[#e2e8f0] bg-white px-4 py-1.5 text-[13px] font-bold text-[#0D1424] hover:bg-slate-50 disabled:opacity-50"
             >
               {status === "paused" ? "Resume" : "Pause"}
             </button>
             <button
               onClick={handleDone}
               disabled={status === "connecting" || status === "saving"}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+              className="rounded-full bg-[#4780ff] px-4 py-1.5 text-[13px] font-bold text-white hover:opacity-90 disabled:opacity-60"
             >
               {status === "saving" ? "Saving…" : "Done"}
             </button>
@@ -370,29 +407,6 @@ export default function RecordingView({ patient, visitId, onDone }: Props) {
   );
 }
 
-function TurnLine({
-  turn,
-  doctorSpeaker,
-}: {
-  turn: Turn;
-  doctorSpeaker: number | null;
-}) {
-  const style = speakerStyle(turn.speaker, doctorSpeaker);
-  const label = speakerLabel(turn.speaker, doctorSpeaker);
-  return (
-    <div className={`rounded-lg px-3 py-2 ring-1 ring-inset ${style.bubble}`}>
-      <div
-        className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${style.label}`}
-      >
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: style.dot }} />
-        {label}
-      </div>
-      <div className="mt-0.5 text-base leading-7 text-[#0F172A]">
-        {turn.text}
-      </div>
-    </div>
-  );
-}
 
 function StatusBadge({ status }: { status: Status }) {
   if (status === "recording")

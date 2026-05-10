@@ -348,7 +348,7 @@ export default function PatientDetailPage({ params }: Props) {
         className="rounded-lg border px-3 py-1.5 text-[13px] font-bold transition-colors hover:bg-slate-50 disabled:opacity-50"
         style={{ borderColor: "var(--border-strong)", color: "var(--text-1)" }}
       >
-        {isChatOpen ? "Close AI" : "Ask AI"}
+        {isChatOpen ? "Close chat" : "Ask Clair"}
       </button>
       <button
         onClick={() => requestNavigation(startRecording)}
@@ -666,7 +666,7 @@ function ChatSidebar({
       >
         <div className="min-w-0">
           <div className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-1)" }}>
-            Ask AI
+            Ask Clair
           </div>
           <div className="truncate font-bold" style={{ color: "var(--text-1)" }}>
             {patientName || "Patient"}
@@ -987,10 +987,10 @@ function Bento({
           historyAction={history("recent_vitals")}
         />
       </div>
-      <div className="lg:col-span-4">
+      <div className="lg:col-span-3">
         <LabsCard labs={labs} />
       </div>
-      <div className="lg:col-span-3">
+      <div className="lg:col-span-4">
         <DocumentsCard
           patientId={patient.id}
           documents={data.documents}

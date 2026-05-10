@@ -252,18 +252,25 @@ function ChatSidebar({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // ESC closes
+  // ESC: cancel confirm dialog if open, otherwise close the sidebar
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (showClearConfirm) {
+        setShowClearConfirm(false);
+      } else {
+        onClose();
+      }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, showClearConfirm]);
 
   // Load saved history when opened (or patient changes)
   useEffect(() => {
@@ -333,10 +340,39 @@ function ChatSidebar({
     }
   }
 
+  function startNewChat() {
+    if (isSending) return;
+    if (messages.length === 0 && !input) return;
+    if (messages.length === 0) {
+      // Nothing persisted yet — just clear the draft, no confirm needed.
+      setInput("");
+      inputRef.current?.focus();
+      return;
+    }
+    setShowClearConfirm(true);
+  }
+
+  async function confirmClearChat() {
+    if (isClearing) return;
+    setIsClearing(true);
+    setError(null);
+    try {
+      await api(`/api/patients/${patientId}/chat`, { method: "DELETE" });
+      setMessages([]);
+      setInput("");
+      setShowClearConfirm(false);
+      inputRef.current?.focus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clear chat");
+    } finally {
+      setIsClearing(false);
+    }
+  }
+
   return (
     <aside
       aria-hidden={!open}
-      className={`fixed right-0 top-0 z-40 flex h-full w-full max-w-[420px] flex-col border-l border-zinc-200 bg-white shadow-xl transition-transform duration-200 ${
+      className={`fixed right-0 top-0 z-40 flex h-full w-full max-w-[420px] flex-col overflow-hidden border-l border-zinc-200 bg-white shadow-xl transition-transform duration-200 ${
         open ? "translate-x-0" : "translate-x-full"
       }`}
     >
@@ -349,24 +385,48 @@ function ChatSidebar({
             {patientName || "Patient"}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close chat"
-          className="shrink-0 text-zinc-400 transition hover:text-zinc-900"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={startNewChat}
+            disabled={isSending || (messages.length === 0 && !input)}
+            aria-label="Start new chat"
+            title="New chat"
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
           >
-            <path d="M3 3l12 12M15 3L3 15" />
-          </svg>
-        </button>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close chat"
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <path d="M3 3l12 12M15 3L3 15" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <div
@@ -449,6 +509,53 @@ function ChatSidebar({
           Send
         </button>
       </form>
+
+      {showClearConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="clear-chat-title"
+          className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/30 px-4 backdrop-blur-[2px]"
+          onClick={() => {
+            if (!isClearing) setShowClearConfirm(false);
+          }}
+        >
+          <div
+            className="w-full max-w-[320px] rounded-xl border border-zinc-200 bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              id="clear-chat-title"
+              className="text-sm font-semibold text-zinc-900"
+            >
+              Start a new chat?
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-zinc-600">
+              Your saved chat history for this patient will be deleted. This
+              cannot be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                disabled={isClearing}
+                className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmClearChat}
+                disabled={isClearing}
+                autoFocus
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
+              >
+                {isClearing ? "Clearing…" : "Clear chat"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

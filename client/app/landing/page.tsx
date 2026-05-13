@@ -126,23 +126,29 @@ function CountUp({
 
 export default function LandingPage() {
   const orbAmplitude = useMotionValue(0);
+  const [introComplete, setIntroComplete] = useState(false);
   const [activeFeature, setActiveFeature] = useState(0);
   const productRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const t = setTimeout(() => setIntroComplete(true), 2400);
+    return () => clearTimeout(t);
+  }, []);
+
   // Scroll-driven navbar morph
   const { scrollY } = useScroll();
-  const navPT    = useTransform(scrollY, [0, 110], [0, 12]);
-  const navPX    = useTransform(scrollY, [0, 110], [0, 16]);
-  const innerRadius = useTransform(scrollY, [0, 110], [0, 9999]);
-  const innerMaxW   = useTransform(scrollY, [0, 110], [3000, 680]);
-  const innerPX     = useTransform(scrollY, [0, 110], [40, 20]);
-  const innerPY     = useTransform(scrollY, [0, 110], [14, 10]);
-  const bgAlpha     = useTransform(scrollY, [0, 110], [1, 0.88]);
-  const blurAmt     = useTransform(scrollY, [0, 110], [0, 14]);
-  const logoH       = useTransform(scrollY, [0, 110], [40, 32]);
-  const borderBottomA = useTransform(scrollY, [0, 80], [0.07, 0]);
-  const pillShadowA   = useTransform(scrollY, [30, 110], [0, 0.06]);
-  const pillBorderA   = useTransform(scrollY, [30, 110], [0, 0.07]);
+  const navPT    = useTransform(scrollY, [0, 330], [0, 12]);
+  const navPX    = useTransform(scrollY, [0, 330], [0, 16]);
+  const innerRadius = useTransform(scrollY, [0, 330], [0, 9999]);
+  const innerMaxW   = useTransform(scrollY, [0, 330], [3000, 680]);
+  const innerPX     = useTransform(scrollY, [0, 330], [40, 20]);
+  const innerPY     = useTransform(scrollY, [0, 330], [14, 10]);
+  const bgAlpha     = useTransform(scrollY, [0, 330], [1, 0.88]);
+  const blurAmt     = useTransform(scrollY, [0, 330], [0, 14]);
+  const logoH       = useTransform(scrollY, [0, 330], [40, 32]);
+  const borderBottomA = useTransform(scrollY, [0, 240], [0.07, 0]);
+  const pillShadowA   = useTransform(scrollY, [90, 330], [0, 0.06]);
+  const pillBorderA   = useTransform(scrollY, [90, 330], [0, 0.07]);
 
   const navBg      = useMotionTemplate`rgba(255,255,255,${bgAlpha})`;
   const navBlur    = useMotionTemplate`blur(${blurAmt}px)`;
@@ -170,6 +176,96 @@ export default function LandingPage() {
       className="min-h-screen bg-white text-[#0F172A] overflow-x-hidden"
       style={{ fontFamily: "'PPNeueMontreal', system-ui, sans-serif" }}
     >
+      {/* ─── INTRO OVERLAY ──────────────────────────────────── */}
+      <AnimatePresence>
+        {!introComplete && (
+          <motion.div
+            key="intro"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.65, ease: "easeInOut" }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 200,
+              background: "#ffffff",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 0,
+            }}
+          >
+            {/* Lightweight orb stand-in: soft glow ring */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              style={{ position: "relative", width: 96, height: 96, marginBottom: 28 }}
+            >
+              {/* Outer glow */}
+              <motion.div
+                animate={{ scale: [1, 1.18, 1], opacity: [0.35, 0.55, 0.35] }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+                style={{
+                  position: "absolute",
+                  inset: "-30%",
+                  borderRadius: "50%",
+                  background: "radial-gradient(circle, rgba(71,128,255,0.55) 0%, transparent 70%)",
+                  filter: "blur(18px)",
+                }}
+              />
+              {/* Orb */}
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  background: "linear-gradient(145deg, #DBEAFE 0%, #93C5FD 50%, #4780ff 100%)",
+                  boxShadow: "0 8px 32px rgba(71,128,255,0.22)",
+                }}
+              />
+              {/* Specular */}
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  background: "radial-gradient(circle at 34% 27%, rgba(255,255,255,0.5) 0%, transparent 55%)",
+                }}
+              />
+            </motion.div>
+
+            <motion.p
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
+              style={{
+                fontSize: "2.5rem",
+                fontFamily: "var(--font-instrument-serif), Georgia, serif",
+                fontWeight: 400,
+                color: "#0F172A",
+                letterSpacing: "-0.01em",
+                lineHeight: 1,
+              }}
+            >
+              Clair
+            </motion.p>
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: 48 }}
+              transition={{ duration: 1.6, ease: "easeInOut", delay: 0.4 }}
+              style={{
+                marginTop: 18,
+                height: 2,
+                background: "#4780ff",
+                borderRadius: 2,
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ─── NAVBAR ─────────────────────────────────────────── */}
       <motion.nav
         className="fixed top-0 left-0 right-0 z-50"
@@ -227,84 +323,81 @@ export default function LandingPage() {
       </motion.nav>
 
       {/* ─── HERO ───────────────────────────────────────────── */}
-      <section className="min-h-screen flex items-center pt-24 pb-16 px-10 max-w-7xl mx-auto">
-        <div className="flex items-center justify-between w-full gap-12">
-          {/* Left: text */}
-          <div className="flex-1 max-w-2xl">
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-              className="text-xs font-bold tracking-widest uppercase mb-4"
-              style={{ color: "#4780ff" }}
-            >
-              Built at HackDavis 2026
-            </motion.p>
+      <section className="relative min-h-screen flex items-center justify-center pt-24 pb-16 overflow-hidden">
+        {/* Orb — centered background, only mounted after intro exits */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.92 }}
+          animate={{ opacity: introComplete ? 1 : 0, scale: introComplete ? 1 : 0.92 }}
+          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+        >
+          {introComplete && <SoftOrb amplitude={orbAmplitude} state="connecting" size={520} />}
+        </motion.div>
 
-            <div className="overflow-hidden">
-              <motion.h1
-                initial={{ y: 70, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
-                className="font-bold leading-[1.06] tracking-tight text-[#0F172A]"
-                style={{ fontSize: "clamp(2.4rem, 4vw, 3.5rem)" }}
-              >
-                No patient tells<br />their story twice.
-              </motion.h1>
-            </div>
-
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.35 }}
-              className="mt-6 text-lg leading-relaxed"
-              style={{ color: "#0F172A" }}
+        {/* Label + headline — centered on orb, text protrudes past orb edges */}
+        <div className="relative z-10 flex flex-col items-center text-center" style={{ marginTop: "-100px" }}>
+          <div className="overflow-hidden">
+            <motion.h1
+              initial={{ y: 70, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.25 }}
+              className="leading-[1.06] tracking-tight text-[#0F172A] whitespace-nowrap"
+              style={{ fontSize: "clamp(4rem, 7.5vw, 7rem)", fontFamily: "var(--font-instrument-serif), Georgia, serif", fontWeight: 400 }}
             >
-              Clair listens during every visit, extracts clinical state in SOAP format, and hands off complete context to every incoming shift.
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.52, duration: 0.5 }}
-              className="mt-8 flex items-center gap-3 flex-wrap"
-            >
-              <Link
-                href="/login"
-                className="rounded-full px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: "#4780ff" }}
-              >
-                Try Clair →
-              </Link>
-              <Link
-                href="/patients"
-                className="rounded-full px-6 py-3 text-sm font-semibold transition-colors hover:bg-[#F8FAFC]"
-                style={{ border: "1px solid #E2E8F0", color: "#0F172A" }}
-              >
-                Live demo
-              </Link>
-              <a
-                href="https://github.com/justinsiek/HackDavis2026"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-full px-6 py-3 text-sm font-semibold transition-colors hover:bg-[#F8FAFC]"
-                style={{ border: "1px solid #E2E8F0", color: "#0F172A" }}
-              >
-                GitHub
-              </a>
-            </motion.div>
+              No patient tells<br />their story twice.
+            </motion.h1>
           </div>
-
-          {/* Right: orb */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.88 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
-            className="shrink-0 hidden md:flex items-center justify-center"
-          >
-            <SoftOrb amplitude={orbAmplitude} state="connecting" size={360} />
-          </motion.div>
         </div>
+
+        {/* Description — hugs the orb's bottom edge, fully centered */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.42 }}
+          className="absolute z-10 flex justify-center"
+          style={{ top: "calc(50% + 290px)", left: 0, right: 0 }}
+        >
+          <p
+            className="text-center text-base leading-relaxed"
+            style={{ color: "#334155", maxWidth: 580 }}
+          >
+            Clair listens during every visit, extracts clinical state in SOAP format, and hands off<br />complete context to every incoming shift.
+          </p>
+        </motion.div>
+
+        {/* Buttons — anchored to bottom corners, flanking the orb */}
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6, duration: 0.5 }}
+          className="absolute bottom-12 left-0 right-0 z-10 flex items-center justify-between px-14"
+        >
+          <Link
+            href="/login"
+            className="rounded-full px-7 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: "#4780ff" }}
+          >
+            Try Clair →
+          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/patients"
+              className="rounded-full px-7 py-3 text-sm font-semibold transition-colors hover:bg-[#F8FAFC]"
+              style={{ border: "1px solid #E2E8F0", color: "#0F172A", background: "rgba(255,255,255,0.8)" }}
+            >
+              Live demo
+            </Link>
+            <a
+              href="https://github.com/justinsiek/HackDavis2026"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full px-7 py-3 text-sm font-semibold transition-colors hover:bg-[#F8FAFC]"
+              style={{ border: "1px solid #E2E8F0", color: "#0F172A", background: "rgba(255,255,255,0.8)" }}
+            >
+              GitHub
+            </a>
+          </div>
+        </motion.div>
       </section>
 
       {/* ─── TICKER ─────────────────────────────────────────── */}

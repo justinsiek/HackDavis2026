@@ -1006,18 +1006,18 @@ function Bento({
         />
       </div>
 
-      {/* Row 4: plan & next steps (full width) */}
+      {/* Row 4: visit history (full width) */}
+      <div className="lg:col-span-12">
+        <VisitHistoryCard visits={data.visits} />
+      </div>
+
+      {/* Row 5: plan & next steps (full width) */}
       <div className="lg:col-span-12">
         <PlanCard
           patientId={patient.id}
           items={data.plan_items}
           onChange={onChange}
         />
-      </div>
-
-      {/* Row 5: visit history (full width) */}
-      <div className="lg:col-span-12">
-        <VisitHistoryCard visits={data.visits} />
       </div>
     </div>
   );
@@ -1137,6 +1137,7 @@ function PatientHeaderCard({
   editing,
   onSynopsisChange,
   historyAction,
+  stats,
 }: {
   patient: Patient;
   synopsis: string;
@@ -1158,8 +1159,8 @@ function PatientHeaderCard({
       className="flex h-full flex-col rounded-xl p-6"
       style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
     >
-      {/* Identity row */}
-      <div className="flex items-start gap-5">
+      {/* Identity + synopsis row */}
+      <div className="flex items-center gap-5">
         {patient.photo_data ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -1176,7 +1177,7 @@ function PatientHeaderCard({
             {initials(patient.name)}
           </div>
         )}
-        <div className="min-w-0 flex-1 pt-1">
+        <div className="min-w-0 flex-1">
           <h1
             className="text-3xl font-medium tracking-tight capitalize leading-tight truncate"
             style={{ color: "var(--text-1)" }}
@@ -1189,49 +1190,55 @@ function PatientHeaderCard({
           >
             {meta.join(" · ")}
           </p>
+
+          {/* Synopsis lives here, anchored to the right column */}
+          {editing ? (
+            <div className="mt-3">
+              <div
+                className="mb-1.5 text-[10px] font-bold uppercase tracking-wider"
+                style={{ color: "var(--text-3)" }}
+              >
+                Synopsis
+              </div>
+              <textarea
+                value={synopsis}
+                onChange={(e) => onSynopsisChange(e.target.value || null)}
+                placeholder="Clinical one-liner"
+                rows={3}
+                className="w-full resize-y rounded-lg px-3 py-2 text-lg leading-7 outline-none"
+                style={{
+                  border: "1px solid var(--border-strong)",
+                  color: "var(--text-1)",
+                  background: "var(--bg)",
+                }}
+              />
+            </div>
+          ) : synopsis ? (
+            <div className="mt-3">
+              <div
+                className="mb-1 text-xs font-bold uppercase tracking-wider"
+                style={{ color: "var(--text-1)", fontFamily: "PPNeueMontreal", fontWeight: 700 }}
+              >
+                Synopsis
+              </div>
+              <p
+                className="text-xl leading-snug font-medium"
+                style={{ color: "var(--text-1)" }}
+              >
+                {synopsis}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm italic" style={{ color: "var(--text-3)" }}>
+              Synopsis will appear here after the first visit.
+            </p>
+          )}
         </div>
         {historyAction && <div className="self-start">{historyAction}</div>}
       </div>
 
-      {/* Synopsis — hero treatment */}
-      <div className="mt-1">
-        {editing ? (
-          <>
-            <div
-              className="mb-1.5 text-[10px] font-bold uppercase tracking-wider"
-              style={{ color: "var(--text-3)" }}
-            >
-              Synopsis
-            </div>
-            <textarea
-              value={synopsis}
-              onChange={(e) => onSynopsisChange(e.target.value || null)}
-              placeholder="Clinical one-liner"
-              rows={3}
-              className="w-full resize-y rounded-lg px-3 py-2 text-lg leading-7 outline-none"
-              style={{
-                border: "1px solid var(--border-strong)",
-                color: "var(--text-1)",
-                background: "var(--bg)",
-              }}
-            />
-          </>
-        ) : synopsis ? (
-          <p
-            className="text-xl leading-snug font-medium"
-            style={{ color: "var(--text-1)" }}
-          >
-            {synopsis}
-          </p>
-        ) : (
-          <p className="text-sm italic" style={{ color: "var(--text-3)" }}>
-            Synopsis will appear here after the first visit.
-          </p>
-        )}
-
-        {/* Watch for — collapsible forward-looking risks */}
-        <WatchForSection items={null} />
-      </div>
+      {/* Watch for — collapsible forward-looking risks */}
+      <WatchForSection items={null} />
     </section>
   );
 }
@@ -1344,7 +1351,7 @@ function ChangedCard({
         {totalChanges > 0 && (
           <span
             className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-medium"
-            style={{ background: "#fff", color: "#0F172A", border: "1px solid #0F172A" }}
+            style={{ background: "var(--accent-light)", color: "var(--accent)", border: "1px solid rgba(71,128,255,0.4)" }}
           >
             {totalChanges}
           </span>
@@ -1413,13 +1420,13 @@ function FieldDiffAccordion({
         <div className="flex min-w-0 items-center gap-2">
           <span
             className="text-[11px] uppercase tracking-wider leading-none"
-            style={{ color: "#92400E", fontFamily: "PPNeueMontreal", fontWeight: 600 }}
+            style={{ color: "#0F172A", fontFamily: "PPNeueMontreal", fontWeight: 600 }}
           >
             {diff.label}
           </span>
           <span
             className="inline-flex h-4 min-w-[16px] shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-medium leading-none"
-            style={{ background: "#fff", color: "#0F172A", border: "1px solid #0F172A" }}
+            style={{ background: "var(--accent-light)", color: "var(--accent)", border: "1px solid rgba(71,128,255,0.4)" }}
           >
             {count}
           </span>
@@ -1437,7 +1444,7 @@ function FieldDiffAccordion({
         >
           <path
             d="M2 4l3 3 3-3"
-            stroke="#92400E"
+            stroke="var(--accent)"
             strokeWidth="1.4"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -2147,7 +2154,7 @@ function TextCard({
 // Long-term goal journey card
 // ---------------------------------------------------------------------------
 
-const TRACK_H = 220; // px — fixed height of the expanded timeline container
+const TRACK_H = 360; // px — fixed height of the expanded timeline container
 
 function LongTermGoalCard({
   patientId,
@@ -2201,6 +2208,8 @@ function LongTermGoalCard({
   const fillH = trackLen * (progress / 100);
   // Y-coordinate from top of container for the "current" dot center
   const dotTopFromTop = PAD + trackLen * (1 - progress / 100);
+  // Keep the % label below the goal text block (which can be 2–5 lines at maxWidth 160)
+  const percentLabelTop = Math.max(dotTopFromTop - 14, 160);
 
   if (editing) {
     return (
@@ -2398,7 +2407,7 @@ function LongTermGoalCard({
                     animate={{ x: 0, opacity: 1 }}
                     transition={{ delay: 0.6, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                     className="absolute flex items-baseline gap-1"
-                    style={{ left: 28, top: dotTopFromTop - 14 }}
+                    style={{ left: 28, top: percentLabelTop }}
                   >
                     <span
                       className="text-2xl font-bold tabular-nums leading-none"
@@ -2577,96 +2586,224 @@ function LabsCard({ labs }: { labs: Lab[] }) {
 // Visit history
 // ---------------------------------------------------------------------------
 
+const TIMELINE_SLOTS = 10;
+
 function VisitHistoryCard({ visits }: { visits: Visit[] }) {
-  const [expanded, setExpanded] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const sorted = useMemo(
+    () => [...visits].sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()),
+    [visits]
+  );
+
+  const slots = Math.max(sorted.length, TIMELINE_SLOTS);
+  const selectedVisit = visits.find((v) => v.id === selectedId) ?? null;
+
   return (
     <BentoCard>
-      <button
-        type="button"
-        onClick={() => setExpanded((o) => !o)}
-        aria-expanded={expanded}
-        className={`flex w-full items-center justify-between gap-2 ${
-          expanded ? "mb-2" : ""
-        }`}
-      >
-        <h2
-          className="text-xs font-bold uppercase tracking-wider"
-          style={{ color: "var(--text-1)", fontFamily: "PPNeueMontreal", fontWeight: 700 }}
-        >
-          Visit history
-        </h2>
-        <span
-          aria-hidden="true"
-          className="text-xs transition-transform"
-          style={{
-            color: "var(--text-1)",
-            transform: expanded ? "rotate(180deg)" : "none",
-          }}
-        >
-          ▾
-        </span>
-      </button>
-      {expanded &&
-        (visits.length === 0 ? (
-          <Empty>No prior visits recorded.</Empty>
-        ) : (
-          <ul className="grid grid-cols-1 lg:grid-cols-2 gap-x-8">
-            {visits.map((v, i) => (
-              <li
-                key={v.id}
-                className={`py-3 ${
-                  i < 2 ? "lg:border-t-0" : "lg:border-t"
-                } ${i === 0 ? "border-t-0" : "border-t"}`}
-                style={{ borderColor: "var(--border)" }}
+      <CardHeader title="Visit history" />
+
+      {visits.length === 0 ? (
+        <Empty>No prior visits recorded.</Empty>
+      ) : (
+        <>
+          {/* ── Horizontal timeline ── */}
+          <div className="relative mt-1 mb-2" style={{ height: 52, overflow: "visible" }}>
+            {/* Track */}
+            <div
+              className="absolute rounded-full"
+              style={{
+                top: 18, left: 0, right: 0,
+                height: 2,
+                background: "var(--accent-light)",
+              }}
+            />
+
+            {/* Slots */}
+            {Array.from({ length: slots }).map((_, i) => {
+              const visit = sorted[i] ?? null;
+              const frac = slots === 1 ? 0.5 : i / (slots - 1);
+              const isSelected = visit ? visit.id === selectedId : false;
+              const isHovered = hoveredIdx === i;
+
+              // Tooltip horizontal anchor: flip near edges to stay in bounds
+              const tooltipStyle: React.CSSProperties =
+                frac < 0.15
+                  ? { left: 0 }
+                  : frac > 0.85
+                  ? { right: 0 }
+                  : { left: "50%", transform: "translateX(-50%)" };
+
+              return (
+                <div
+                  key={i}
+                  className="absolute"
+                  style={{ left: `${frac * 100}%`, top: 0, transform: "translateX(-50%)", zIndex: isHovered ? 20 : isSelected ? 10 : 1 }}
+                  onMouseEnter={() => setHoveredIdx(i)}
+                  onMouseLeave={() => setHoveredIdx(null)}
+                >
+                  <button
+                    type="button"
+                    onClick={() => visit && setSelectedId(visit.id === selectedId ? null : visit.id)}
+                    className="rounded-full transition-all duration-150 block"
+                    style={{
+                      marginTop: visit ? (isSelected ? 11 : 13) : 13,
+                      width: visit ? (isSelected ? 14 : 10) : 10,
+                      height: visit ? (isSelected ? 14 : 10) : 10,
+                      background: visit ? "var(--accent)" : "var(--border-strong)",
+                      boxShadow: isSelected ? "0 0 0 3px var(--accent-light), 0 0 0 5px var(--accent)" : "none",
+                      cursor: visit ? "pointer" : "default",
+                    }}
+                  />
+
+                  {/* Hover tooltip */}
+                  {isHovered && (
+                    <div
+                      className="absolute rounded-lg px-2.5 py-1.5 shadow-md whitespace-nowrap"
+                      style={{
+                        top: 40,
+                        ...tooltipStyle,
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {visit ? (
+                        <>
+                          <div className="text-xs font-bold" style={{ color: "var(--text-1)" }}>
+                            {visit.doctor_name}
+                          </div>
+                          <div className="text-[11px]" style={{ color: "var(--text-3)" }}>
+                            {new Date(visit.started_at).toLocaleDateString(undefined, {
+                              month: "short", day: "numeric", year: "numeric",
+                            })}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-xs italic" style={{ color: "var(--text-3)" }}>
+                          No appointment
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Selected visit popup ── */}
+          <AnimatePresence>
+            {selectedVisit && (
+              <motion.div
+                key={selectedVisit.id}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="mb-3 rounded-xl p-4"
+                style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
               >
-                <VisitRowInline visit={v} />
-              </li>
-            ))}
-          </ul>
-        ))}
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-bold truncate" style={{ color: "var(--text-1)" }}>
+                      {selectedVisit.doctor_name}
+                    </span>
+                    {(selectedVisit.status === "active" || selectedVisit.status === "processing") && (
+                      <span
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                        style={{ background: "var(--accent-light)", color: "var(--accent)" }}
+                      >
+                        {selectedVisit.status}
+                      </span>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-xs" style={{ color: "var(--text-3)" }}>
+                    {new Date(selectedVisit.started_at).toLocaleDateString(undefined, {
+                      month: "short", day: "numeric", year: "numeric",
+                    })}
+                  </span>
+                </div>
+                {selectedVisit.summary ? (
+                  <p className="text-sm leading-snug" style={{ color: "var(--text-2)" }}>
+                    {selectedVisit.summary}
+                  </p>
+                ) : (
+                  <p className="text-xs italic" style={{ color: "var(--text-3)" }}>
+                    {selectedVisit.transcript ? "No summary available for this visit." : "No transcript saved."}
+                  </p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Expand toggle ── */}
+          <button
+            type="button"
+            onClick={() => setExpanded((o) => !o)}
+            className="text-xs font-bold uppercase tracking-wider transition-opacity hover:opacity-60"
+            style={{ color: "var(--accent)" }}
+          >
+            {expanded ? "Collapse history" : "Expand history"}
+          </button>
+
+          {/* ── Full list ── */}
+          <AnimatePresence>
+            {expanded && (
+              <motion.ul
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                style={{ overflow: "hidden", borderColor: "var(--border)" }}
+                className="mt-3 divide-y text-sm"
+              >
+                {visits.map((v) => (
+                  <li key={v.id} className="py-3 first:pt-0 last:pb-0">
+                    <VisitRowInline visit={v} />
+                  </li>
+                ))}
+              </motion.ul>
+            )}
+          </AnimatePresence>
+        </>
+      )}
     </BentoCard>
   );
 }
 
 function VisitRowInline({ visit }: { visit: Visit }) {
   const date = new Date(visit.started_at).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+    month: "short", day: "numeric", year: "numeric",
   });
   return (
     <>
-      <div className="flex items-baseline justify-between gap-3">
-        <span
-          className="truncate text-sm font-medium"
-          style={{ color: "var(--text-1)" }}
-        >
-          {visit.doctor_name}
-        </span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="truncate text-sm font-bold" style={{ color: "var(--text-1)" }}>
+            {visit.doctor_name}
+          </span>
+          {(visit.status === "active" || visit.status === "processing") && (
+            <span
+              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{ background: "var(--accent-light)", color: "var(--accent)" }}
+            >
+              {visit.status}
+            </span>
+          )}
+        </div>
         <span className="shrink-0 text-xs" style={{ color: "var(--text-3)" }}>
           {date}
         </span>
       </div>
       {visit.summary ? (
-        <p
-          className="mt-1 text-sm leading-6"
-          style={{ color: "var(--text-2)" }}
-        >
+        <p className="mt-1 text-sm leading-snug" style={{ color: "var(--text-2)" }}>
           {visit.summary}
         </p>
-      ) : visit.transcript ? (
-        <p
-          className="mt-1 text-xs italic"
-          style={{ color: "var(--text-3)" }}
-        >
-          No summary available for this visit.
-        </p>
       ) : (
-        <p
-          className="mt-1 text-xs italic"
-          style={{ color: "var(--text-3)" }}
-        >
-          No transcript saved.
+        <p className="mt-1 text-xs italic" style={{ color: "var(--text-3)" }}>
+          {visit.transcript ? "No summary available for this visit." : "No transcript saved."}
         </p>
       )}
     </>
@@ -3225,7 +3362,6 @@ function PlanCard({
                     className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-bold"
                     style={{ background: style.bg, border: `1px solid ${style.border}`, color: style.fg }}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: style.dot }} />
                     {cat}
                   </span>
                   <span className="text-[11px]" style={{ color: "var(--text-1)" }}>
@@ -3394,7 +3530,7 @@ function PlanItemRow({
         item.created_during_visit_id && (
           <span
             className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-            style={{ background: "var(--bg)", border: "1px solid var(--border-strong)", color: "var(--text-2)" }}
+            style={{ background: "var(--bg)", border: "1px solid var(--border-strong)", color: "var(--text-1)" }}
             title="Added from a visit transcript"
           >
             from visit

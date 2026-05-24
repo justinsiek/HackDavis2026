@@ -137,6 +137,7 @@ export type GetPatientResponse = {
   documents: PatientDocument[];
   visits: Visit[];
   plan_items: PlanItem[];
+  watch_for: string[];
 };
 
 export const EDITABLE_FIELDS = [

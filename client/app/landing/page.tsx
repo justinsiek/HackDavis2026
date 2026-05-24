@@ -5,24 +5,15 @@ import {
   motion,
   useScroll,
   useTransform,
-  useMotionValue,
+  useSpring,
   useMotionTemplate,
   useInView,
   AnimatePresence,
 } from "framer-motion";
 import Link from "next/link";
-import SoftOrb from "@/components/SoftOrb";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-const TICKER_ITEMS = [
-  { big: "Deepgram", small: "NOVA-3-MEDICAL" },
-  { big: "SOAP", small: "FRAMEWORK" },
-  { big: "Per-doctor", small: "SNAPSHOTS" },
-  { big: "Harvard", small: "GROUNDED" },
-  { big: "Real-time", small: "DIARIZATION" },
-  { big: "Claude", small: "SONNET 4.6" },
-];
 
 const FEATURES = [
   {
@@ -122,55 +113,71 @@ function CountUp({
   );
 }
 
+// ─── Blob loop timings ────────────────────────────────────────────────────────
+
+const L8  = { duration: 8,    repeat: Infinity, ease: "easeInOut" as const };
+const L9  = { duration: 9.5,  repeat: Infinity, ease: "easeInOut" as const };
+const L11 = { duration: 11,   repeat: Infinity, ease: "easeInOut" as const };
+const L12 = { duration: 12,   repeat: Infinity, ease: "easeInOut" as const };
+const L7  = { duration: 7.5,  repeat: Infinity, ease: "easeInOut" as const };
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
-  const orbAmplitude = useMotionValue(0);
   const [activeFeature, setActiveFeature] = useState(0);
-  const productRef = useRef<HTMLDivElement>(null);
+  const [viewportH, setViewportH] = useState(900);
+  const heroRef      = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    setViewportH(window.innerHeight);
+    const onResize = () => setViewportH(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Scroll-driven navbar morph
   const { scrollY } = useScroll();
-  const navPT    = useTransform(scrollY, [0, 110], [0, 12]);
-  const navPX    = useTransform(scrollY, [0, 110], [0, 16]);
-  const innerRadius = useTransform(scrollY, [0, 110], [0, 9999]);
-  const innerMaxW   = useTransform(scrollY, [0, 110], [3000, 680]);
-  const innerPX     = useTransform(scrollY, [0, 110], [40, 20]);
-  const innerPY     = useTransform(scrollY, [0, 110], [14, 10]);
-  const bgAlpha     = useTransform(scrollY, [0, 110], [1, 0.88]);
-  const blurAmt     = useTransform(scrollY, [0, 110], [0, 14]);
-  const logoH       = useTransform(scrollY, [0, 110], [40, 32]);
-  const borderBottomA = useTransform(scrollY, [0, 80], [0.07, 0]);
-  const pillShadowA   = useTransform(scrollY, [30, 110], [0, 0.06]);
-  const pillBorderA   = useTransform(scrollY, [30, 110], [0, 0.07]);
+  const navPT       = useTransform(scrollY, [60, 220], [16, 12]);
+  const navPX       = useTransform(scrollY, [60, 220], [32, 16]);
+  const innerMaxW   = useTransform(scrollY, [60, 220], [3000, 720]);
+  const innerRadius = useTransform(scrollY, [60, 220], [0, 9999]);
+  const innerPX     = useTransform(scrollY, [60, 220], [0, 20]);
+  const innerPY     = useTransform(scrollY, [60, 220], [0, 10]);
+  const bgAlpha     = useTransform(scrollY, [60, 220], [0, 0.88]);
+  const blurAmt     = useTransform(scrollY, [60, 220], [0, 14]);
+  const pillShadowA = useTransform(scrollY, [100, 220], [0, 0.07]);
+  const pillBorderA = useTransform(scrollY, [100, 220], [0, 0.08]);
+  const navBg     = useMotionTemplate`rgba(255,255,255,${bgAlpha})`;
+  const navBlur   = useMotionTemplate`blur(${blurAmt}px)`;
+  const navShadow = useMotionTemplate`0 2px 24px rgba(0,0,0,${pillShadowA}), 0 0 0 1px rgba(0,0,0,${pillBorderA})`;
 
-  const navBg      = useMotionTemplate`rgba(255,255,255,${bgAlpha})`;
-  const navBlur    = useMotionTemplate`blur(${blurAmt}px)`;
-  const navShadow  = useMotionTemplate`0 1px 0 rgba(0,0,0,${borderBottomA}), 0 2px 20px rgba(0,0,0,${pillShadowA}), 0 0 0 1px rgba(0,0,0,${pillBorderA})`;
-
-  // Feature auto-cycle
   useEffect(() => {
-    const id = setInterval(() => {
-      setActiveFeature((i) => (i + 1) % FEATURES.length);
-    }, 3500);
+    const id = setInterval(() => setActiveFeature((i) => (i + 1) % FEATURES.length), 3500);
     return () => clearInterval(id);
   }, []);
 
-  // Product reveal scroll
-  const { scrollYProgress: productProgress } = useScroll({
-    target: productRef,
-    offset: ["start end", "end center"],
+  // Hero scroll — drives orb fade + mockup peek-up (200vh section)
+  const { scrollYProgress: heroProgress } = useScroll({
+    target: heroRef,
+    offset: ["start start", "end end"],
   });
-  const mockupRotateX = useTransform(productProgress, [0, 1], [32, 0]);
-  const circleScale = useTransform(productProgress, [0, 1], [0.5, 1.5]);
-  const circleOpacity = useTransform(productProgress, [0, 0.25, 1], [0, 1, 1]);
+  const headlineOpacity = useTransform(heroProgress, [0.35, 0.6], [1, 0.55]);
+  const orbScaleRaw     = useTransform(heroProgress, [0.04, 0.45], [1, 8]);
+  const orbScale        = useSpring(orbScaleRaw, { stiffness: 60, damping: 18 });
+  const orbOpacity      = useTransform(heroProgress, [0.46, 0.62], [1, 0]);
+  const heroBg          = useTransform(heroProgress, [0.13, 0.47, 0.48, 0.68], ["#FFFFFF", "#A5C8FF", "#A5C8FF", "#FFFFFF"]);
+  const finalY       = -(viewportH * 0.80);
+  const mockupPeekYRaw    = useTransform(heroProgress, [0, 1], [0, finalY]);
+  const mockupRotateXRaw  = useTransform(heroProgress, [0, 0.8], [45, 0]);
+  const springConfig      = { stiffness: 280, damping: 32 };
+  const mockupPeekY       = useSpring(mockupPeekYRaw, springConfig);
+  const mockupRotateX     = useSpring(mockupRotateXRaw, springConfig);
+
 
   return (
-    <div
-      className="min-h-screen bg-white text-[#0F172A] overflow-x-hidden"
-      style={{ fontFamily: "'PPNeueMontreal', system-ui, sans-serif" }}
-    >
-      {/* ─── NAVBAR ─────────────────────────────────────────── */}
+    <div className="min-h-screen bg-white text-[#0F172A]" style={{ overflowX: "clip" }}>
+
+      {/* ─── NAVBAR (morphs from 3 floating pills → single glass pill) ── */}
       <motion.nav
         className="fixed top-0 left-0 right-0 z-50"
         initial={{ y: -20, opacity: 0 }}
@@ -194,258 +201,232 @@ export default function LandingPage() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: 24,
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <motion.img
+          {/* Left: Clair logo */}
+          <img
             src="/clair-logo.png"
             alt="Clair"
             draggable={false}
-            className="shrink-0 w-auto"
-            style={{ height: logoH }}
+            className="w-auto shrink-0"
+            style={{ height: 32 }}
           />
-          <div className="flex items-center gap-7 flex-1">
-            <a href="#how-it-works" className="text-sm text-[#0F172A] hover:opacity-60 transition-opacity">
-              How it works
+
+          {/* Right: Live demo + GitHub + Try Clair */}
+          <div className="flex items-center gap-3 shrink-0">
+            <Link
+              href="/patients"
+              className="inline-flex items-center rounded-full px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-gray-50"
+              style={{ border: "1.5px solid #D1D5DB", color: "#0F172A", background: "white" }}
+            >
+              Live demo
+            </Link>
+            <a
+              href="https://github.com/justinsiek/HackDavis2026"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center rounded-full px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-gray-50"
+              style={{ border: "1.5px solid #D1D5DB", color: "#0F172A", background: "white" }}
+            >
+              GitHub
             </a>
-            <a href="#the-problem" className="text-sm text-[#0F172A] hover:opacity-60 transition-opacity">
-              The problem
-            </a>
-            <a href="#demo" className="text-sm text-[#0F172A] hover:opacity-60 transition-opacity">
-              Demo
-            </a>
+            <Link
+              href="/login"
+              className="inline-flex items-center rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-85 shrink-0"
+              style={{ background: "#4780ff" }}
+            >
+              Try Clair →
+            </Link>
           </div>
-          <Link
-            href="/login"
-            className="shrink-0 rounded-full px-5 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
-            style={{ background: "#4780ff" }}
-          >
-            Try Clair
-          </Link>
         </motion.div>
       </motion.nav>
 
-      {/* ─── HERO ───────────────────────────────────────────── */}
-      <section className="min-h-screen flex items-center pt-24 pb-16 px-10 max-w-7xl mx-auto">
-        <div className="flex items-center justify-between w-full gap-12">
-          {/* Left: text */}
-          <div className="flex-1 max-w-2xl">
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-              className="text-xs font-bold tracking-widest uppercase mb-4"
-              style={{ color: "#4780ff" }}
-            >
-              Built at HackDavis 2026
-            </motion.p>
-
-            <div className="overflow-hidden">
-              <motion.h1
-                initial={{ y: 70, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
-                className="font-bold leading-[1.06] tracking-tight text-[#0F172A]"
-                style={{ fontSize: "clamp(2.4rem, 4vw, 3.5rem)" }}
-              >
-                No patient tells<br />their story twice.
-              </motion.h1>
-            </div>
-
-            <motion.p
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.35 }}
-              className="mt-6 text-lg leading-relaxed"
-              style={{ color: "#0F172A" }}
-            >
-              Clair listens during every visit, extracts clinical state in SOAP format, and hands off complete context to every incoming shift.
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.52, duration: 0.5 }}
-              className="mt-8 flex items-center gap-3 flex-wrap"
-            >
-              <Link
-                href="/login"
-                className="rounded-full px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: "#4780ff" }}
-              >
-                Try Clair →
-              </Link>
-              <Link
-                href="/patients"
-                className="rounded-full px-6 py-3 text-sm font-semibold transition-colors hover:bg-[#F8FAFC]"
-                style={{ border: "1px solid #E2E8F0", color: "#0F172A" }}
-              >
-                Live demo
-              </Link>
-              <a
-                href="https://github.com/justinsiek/HackDavis2026"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-full px-6 py-3 text-sm font-semibold transition-colors hover:bg-[#F8FAFC]"
-                style={{ border: "1px solid #E2E8F0", color: "#0F172A" }}
-              >
-                GitHub
-              </a>
-            </motion.div>
-          </div>
-
-          {/* Right: orb */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.88 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
-            className="shrink-0 hidden md:flex items-center justify-center"
-          >
-            <SoftOrb amplitude={orbAmplitude} state="connecting" size={360} />
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ─── TICKER ─────────────────────────────────────────── */}
-      <div
-        className="overflow-hidden py-5"
-        style={{ borderTop: "1px solid #E5E7EB", borderBottom: "1px solid #E5E7EB", background: "#F8FAFC" }}
+      {/* ─── HERO ────────────────────────────────────────────── */}
+      <section
+        ref={heroRef}
+        className="relative bg-white"
+        style={{ height: "158vh", overflow: "visible" }}
       >
+        {/* Sticky viewport — stays pinned while user scrolls the 200vh section */}
         <div
-          className="flex whitespace-nowrap"
-          style={{ animation: "clairMarquee 32s linear infinite" }}
-        >
-          {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, i) => (
-            <span key={i} className="mx-10 inline-flex items-baseline gap-2.5 shrink-0">
-              <span className="text-xl font-semibold text-[#0F172A]">{item.big}</span>
-              <span
-                className="text-[10px] font-bold tracking-widest uppercase"
-                style={{ color: "#0F172A" }}
-              >
-                {item.small}
-              </span>
-            </span>
-          ))}
-        </div>
-        <style>{`
-          @keyframes clairMarquee {
-            0%   { transform: translateX(0) }
-            100% { transform: translateX(-50%) }
-          }
-        `}</style>
-      </div>
-
-      {/* ─── PRODUCT REVEAL ─────────────────────────────────── */}
-      <section id="demo" ref={productRef} className="relative py-32 overflow-hidden">
-        {/* Scroll-driven glow circle */}
-        <motion.div
           style={{
-            scale: circleScale,
-            opacity: circleOpacity,
-          }}
-          className="absolute pointer-events-none"
-          css-comment="centered via inset trick"
-          aria-hidden
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              width: 800,
-              height: 800,
-              marginLeft: -400,
-              marginTop: -400,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle, rgba(71,128,255,0.08) 0%, rgba(71,128,255,0.03) 50%, transparent 70%)",
-            }}
-          />
-        </motion.div>
-
-        {/* Centered glow positioned absolutely */}
-        <div
-          className="pointer-events-none"
-          style={{
-            position: "absolute",
+            position: "sticky",
             top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
+            height: "100vh",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            overflow: "hidden",
+            paddingBottom: "10vh",
           }}
-          aria-hidden
+        >
+        {/* Background — framer-motion owns this entirely, no React reconciliation conflicts */}
+        <motion.div
+          style={{
+            position: "absolute",
+            inset: 0,
+            backgroundColor: heroBg,
+            zIndex: 0,
+          }}
+        />
+
+        {/* Orb — outer layer: scroll-driven scale + fade-out; inner layer: entry animation */}
+        <motion.div
+          style={{ position: "relative", width: "62vh", height: "62vh", scale: orbScale, opacity: orbOpacity, zIndex: 1, marginTop: "-10vh" }}
+        >
+          {/* Entry animation wrapper */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1.3, ease: [0.16, 1, 0.3, 1] }}
+            style={{ position: "absolute", inset: 0 }}
+          >
+          {/* Outer radial glow */}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: "-42%",
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(167,207,255,0.32) 0%, rgba(167,207,255,0.10) 48%, transparent 70%)",
+              filter: "blur(48px)",
+              pointerEvents: "none",
+            }}
+          />
+
+          {/* Orb shell */}
+          <motion.div
+            animate={{ scale: [1, 1.013, 1] }}
+            transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              overflow: "hidden",
+              WebkitMaskImage:
+                "radial-gradient(circle at 50% 50%, black 55%, transparent 78%)",
+              maskImage:
+                "radial-gradient(circle at 50% 50%, black 55%, transparent 78%)",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "linear-gradient(150deg, #C7D2FE 0%, #93C5FD 40%, #60A5FA 70%, #38BDF8 100%)",
+              }}
+            />
+            <motion.div animate={{ opacity: [0.78, 0.95, 0.68, 0.88, 0.78] }} transition={L8} style={{ position: "absolute", width: "76%", height: "76%", top: "-8%", left: "-8%", background: "#A5B4FC", filter: "blur(72px)", borderRadius: "50%" }} />
+            <motion.div animate={{ opacity: [0.62, 0.82, 0.52, 0.74, 0.62] }} transition={L9} style={{ position: "absolute", width: "66%", height: "66%", top: "-8%", right: "-8%", background: "#6366F1", filter: "blur(62px)", borderRadius: "50%" }} />
+            <motion.div animate={{ opacity: [0.56, 0.80, 0.46, 0.70, 0.56] }} transition={L11} style={{ position: "absolute", width: "66%", height: "66%", bottom: "-8%", right: "-8%", background: "#38BDF8", filter: "blur(66px)", borderRadius: "50%" }} />
+            <motion.div animate={{ opacity: [0.62, 0.84, 0.50, 0.74, 0.62] }} transition={L12} style={{ position: "absolute", width: "60%", height: "60%", bottom: "-8%", left: "-8%", background: "#93C5FD", filter: "blur(56px)", borderRadius: "50%" }} />
+            <motion.div animate={{ opacity: [0.36, 0.58, 0.28, 0.50, 0.36], scale: [1, 1.16, 0.9, 1.12, 1] }} transition={L7} style={{ position: "absolute", width: "48%", height: "48%", top: "26%", left: "26%", background: "#4780ff", filter: "blur(52px)", borderRadius: "50%" }} />
+            <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 30% 27%, rgba(255,255,255,0.46) 0%, transparent 52%)" }} />
+          </motion.div>
+          </motion.div>{/* end entry animation wrapper */}
+        </motion.div>
+
+        {/* Headline — fades out fast, not a child of orb so it doesn't scale */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.9, delay: 0.45 }}
+          style={{
+            position: "absolute",
+            top: "38%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: "100vw",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10,
+            pointerEvents: "none",
+            overflow: "visible",
+          }}
+        >
+          <motion.h1
+            style={{
+              fontFamily: "var(--font-instrument-serif), Georgia, serif",
+              fontSize: "clamp(5.67rem, 14.17vh, 9.92rem)",
+              color: "#0F172A",
+              textAlign: "center",
+              lineHeight: 0.92,
+              letterSpacing: "-0.02em",
+              whiteSpace: "nowrap",
+              opacity: headlineOpacity,
+            }}
+          >
+            Every provider.
+            <br />
+            Always in context.
+          </motion.h1>
+        </motion.div>
+
+        {/* Mockup — peeks up from bottom, slides fully into view on scroll */}
+        <div
+          style={{
+            position: "absolute",
+            top: "78%",
+            left: 0,
+            right: 0,
+            margin: "0 auto",
+            width: "76%",
+            maxWidth: "960px",
+            zIndex: 20,
+            perspective: 1200,
+          }}
         >
           <motion.div
             style={{
-              scale: circleScale,
-              opacity: circleOpacity,
-              width: 800,
-              height: 800,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle, rgba(71,128,255,0.08) 0%, rgba(71,128,255,0.03) 50%, transparent 70%)",
+              y: mockupPeekY,
+              rotateX: mockupRotateX,
+              transformOrigin: "top center",
             }}
-          />
-        </div>
-
-        {/* Text */}
-        <div className="max-w-4xl mx-auto px-10 text-center relative z-10">
-          <p
-            className="text-xs font-bold tracking-widest uppercase mb-4"
-            style={{ color: "#4780ff" }}
           >
-            See it in action
-          </p>
-          <h2 className="text-4xl font-bold leading-tight tracking-tight text-[#0F172A]">
-            Clinical documentation,<br />handled.
-          </h2>
-          <p className="mt-4 text-lg max-w-lg mx-auto" style={{ color: "#0F172A" }}>
-            Clair listens, transcribes, and populates your patient record all while you focus on the person in front of you.
-          </p>
-          <Link
-            href="/login"
-            className="mt-8 inline-block rounded-full px-8 py-3.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: "#4780ff" }}
-          >
-            Try a live visit
-          </Link>
-        </div>
-
-        {/* Scroll-driven mockup */}
-        <div
-          className="mt-14 max-w-4xl mx-auto px-10 relative z-10"
-          style={{ perspective: 900 }}
-        >
-          <motion.div style={{ rotateX: mockupRotateX, transformOrigin: "top center" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/demo-screenshot.jpg"
+              src="/demo-screenshot.png"
               alt="Clair patient detail view"
               draggable={false}
-              className="w-full rounded-2xl shadow-2xl"
-              style={{ border: "1px solid #E2E8F0" }}
+              className="w-full rounded-2xl"
+              style={{
+                border: "1px solid rgba(0,0,0,0.12)",
+              }}
             />
+            <p
+              style={{
+                textAlign: "center",
+                marginTop: "1.25rem",
+                fontSize: "0.95rem",
+                color: "#0F172A",
+                fontWeight: 700,
+                letterSpacing: "0.01em",
+                fontFamily: "var(--font-app), sans-serif",
+              }}
+            >
+              Voice transcription. SOAP documentation. Real-time handoffs.
+            </p>
           </motion.div>
         </div>
+
+        </div>{/* end sticky container */}
       </section>
+
 
       {/* ─── FEATURE SECTION ────────────────────────────────── */}
       <section id="how-it-works" className="py-28 px-10 max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
-          {/* Left: problem */}
           <div id="the-problem">
-            <p
-              className="text-xs font-bold tracking-widest uppercase mb-4"
-              style={{ color: "#4780ff" }}
-            >
+            <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{ color: "#4780ff" }}>
               The problem
             </p>
             <h2 className="text-4xl font-bold leading-tight tracking-tight text-[#0F172A] mb-10">
-              The patient remembers.<br />The chart doesn't.
+              The patient remembers.
+              <br />
+              The chart doesn't.
             </h2>
             <div className="space-y-7">
               {PROBLEM_BULLETS.map((b) => (
@@ -459,9 +440,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Right: feature card */}
           <div className="relative">
-            {/* Backglow */}
             <motion.div
               animate={{ opacity: [0.4, 0.75, 0.4] }}
               transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
@@ -470,24 +449,18 @@ export default function LandingPage() {
                 position: "absolute",
                 inset: "-28%",
                 borderRadius: "50%",
-                background:
-                  "radial-gradient(circle, rgba(71,128,255,0.13) 0%, transparent 65%)",
+                background: "radial-gradient(circle, rgba(71,128,255,0.13) 0%, transparent 65%)",
               }}
               aria-hidden
             />
-
             <div
               className="relative rounded-2xl p-6"
               style={{ background: "#FAFAFA", border: "1px solid #E5E7EB" }}
             >
-              <p
-                className="text-[10px] font-bold tracking-widest uppercase mb-5"
-                style={{ color: "#0F172A" }}
-              >
+              <p className="text-[10px] font-bold tracking-widest uppercase mb-5" style={{ color: "#0F172A" }}>
                 How it works
               </p>
 
-              {/* Feature tabs */}
               <div className="space-y-1 mb-5">
                 {FEATURES.map((f, i) => (
                   <button
@@ -496,27 +469,18 @@ export default function LandingPage() {
                     className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all"
                     style={{
                       background: activeFeature === i ? "white" : "transparent",
-                      boxShadow:
-                        activeFeature === i
-                          ? "0 1px 6px rgba(0,0,0,0.06)"
-                          : "none",
+                      boxShadow: activeFeature === i ? "0 1px 6px rgba(0,0,0,0.06)" : "none",
                     }}
                   >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ background: f.dot }}
-                    />
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: f.dot }} />
                     <span className="text-sm font-medium text-[#0F172A]">{f.label}</span>
                     {activeFeature === i && (
-                      <span className="ml-auto text-xs" style={{ color: "#0F172A" }}>
-                        Active
-                      </span>
+                      <span className="ml-auto text-xs" style={{ color: "#0F172A" }}>Active</span>
                     )}
                   </button>
                 ))}
               </div>
 
-              {/* Feature detail */}
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeFeature}
@@ -593,7 +557,6 @@ export default function LandingPage() {
 
       {/* ─── FOOTER CTA ─────────────────────────────────────── */}
       <section className="py-32 px-10 text-center relative overflow-hidden">
-        {/* Soft orb bloom behind */}
         <div
           className="pointer-events-none"
           style={{
@@ -605,8 +568,7 @@ export default function LandingPage() {
             marginLeft: -300,
             marginTop: -300,
             borderRadius: "50%",
-            background:
-              "radial-gradient(circle, rgba(71,128,255,0.07) 0%, transparent 65%)",
+            background: "radial-gradient(circle, rgba(71,128,255,0.07) 0%, transparent 65%)",
           }}
           aria-hidden
         />

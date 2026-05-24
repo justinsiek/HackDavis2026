@@ -43,6 +43,13 @@ STATE_FIELDS = [
     "long_term_goals",
 ]
 
+PATIENT_WATCH_FOR: dict[str, list[str]] = {
+    "9ef828d8-77c2-404f-b8ff-64a7f9bc32d0": [
+        "Rebound hypertension — first visit off antihypertensives, monitor BP at next visit",
+        "Medication reconciliation — ibuprofen noted in record despite prior switch to acetaminophen, confirm active med list with patient",
+    ],
+}
+
 
 def state_subset(state):
     """Pull just the structured medical fields out of a patient_state row."""
@@ -692,6 +699,7 @@ def get_patient(patient_id):
         "documents": docs_result.data or [],
         "visits": visits,
         "plan_items": plan_items,
+        "watch_for": PATIENT_WATCH_FOR.get(patient_id, []),
     })
 
 

@@ -911,6 +911,7 @@ function Bento({
           editing={isEditing}
           onSynopsisChange={(v) => onTextFieldChange("synopsis", v)}
           historyAction={history("synopsis")}
+          watchFor={data.watch_for ?? []}
         />
       </div>
       <div className="lg:col-span-6">
@@ -1137,13 +1138,14 @@ function PatientHeaderCard({
   editing,
   onSynopsisChange,
   historyAction,
-  stats,
+  watchFor,
 }: {
   patient: Patient;
   synopsis: string;
   editing: boolean;
   onSynopsisChange: (v: string | null) => void;
   historyAction?: ReactNode;
+  watchFor?: string[];
 }) {
   const meta: string[] = [];
   if (patient.dob) meta.push(`${calcAge(patient.dob)} years old`);
@@ -1238,7 +1240,7 @@ function PatientHeaderCard({
       </div>
 
       {/* Watch for — collapsible forward-looking risks */}
-      <WatchForSection items={null} />
+      <WatchForSection items={watchFor && watchFor.length > 0 ? watchFor : null} />
     </section>
   );
 }

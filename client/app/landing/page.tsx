@@ -113,6 +113,92 @@ function CountUp({
   );
 }
 
+// ─── Tagline trio (blur-in on scroll) ────────────────────────────────────────
+
+const TAGLINES = [
+  { kicker: "01", title: "Voice transcription", body: "Every word, captured." },
+  { kicker: "02", title: "SOAP documentation", body: "Structured, automatic." },
+  { kicker: "03", title: "Real-time handoffs", body: "Every shift in context." },
+];
+
+function TaglineTrio() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-15% 0px" });
+  return (
+    <div
+      ref={ref}
+      style={{
+        marginTop: "2.5rem",
+        display: "grid",
+        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+        gap: "1px",
+        background: "#E5E7EB",
+        border: "1px solid #E5E7EB",
+        borderRadius: 16,
+        overflow: "hidden",
+        maxWidth: 880,
+        marginLeft: "auto",
+        marginRight: "auto",
+      }}
+    >
+      {TAGLINES.map((t, i) => (
+        <motion.div
+          key={t.kicker}
+          initial={{ opacity: 0, y: 16, filter: "blur(14px)" }}
+          animate={
+            inView
+              ? { opacity: 1, y: 0, filter: "blur(0px)" }
+              : { opacity: 0, y: 16, filter: "blur(14px)" }
+          }
+          transition={{
+            duration: 0.9,
+            delay: 0.15 + i * 0.18,
+            ease: [0.16, 1, 0.3, 1],
+          }}
+          style={{
+            background: "white",
+            padding: "1.5rem 1.25rem",
+            textAlign: "center",
+            fontFamily: "var(--font-app), sans-serif",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              letterSpacing: "0.18em",
+              color: "#4780ff",
+              marginBottom: "0.6rem",
+            }}
+          >
+            {t.kicker}
+          </div>
+          <div
+            style={{
+              fontSize: "0.98rem",
+              fontWeight: 700,
+              color: "#0F172A",
+              letterSpacing: "0.01em",
+              marginBottom: "0.35rem",
+            }}
+          >
+            {t.title}
+          </div>
+          <div
+            style={{
+              fontSize: "0.82rem",
+              color: "#475569",
+              lineHeight: 1.45,
+            }}
+          >
+            {t.body}
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Blob loop timings ────────────────────────────────────────────────────────
 
 const L8  = { duration: 8,    repeat: Infinity, ease: "easeInOut" as const };
@@ -396,29 +482,21 @@ export default function LandingPage() {
                 border: "1px solid rgba(0,0,0,0.12)",
               }}
             />
-            <p
-              style={{
-                textAlign: "center",
-                marginTop: "1.25rem",
-                fontSize: "0.95rem",
-                color: "#0F172A",
-                fontWeight: 700,
-                letterSpacing: "0.01em",
-                fontFamily: "var(--font-app), sans-serif",
-              }}
-            >
-              Voice transcription. SOAP documentation. Real-time handoffs.
-            </p>
           </motion.div>
         </div>
 
         </div>{/* end sticky container */}
       </section>
 
+      {/* ─── TAGLINE TRIO (lifted out of hero so it isn't clipped) ─── */}
+      <section className="px-10 pb-10" style={{ marginTop: "-32vh" }}>
+        <TaglineTrio />
+      </section>
+
 
       {/* ─── FEATURE SECTION ────────────────────────────────── */}
-      <section id="how-it-works" className="py-28 px-10 max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
+      <section id="how-it-works" className="pt-10 pb-28 px-10 max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-20 items-start">
           <div id="the-problem">
             <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{ color: "#4780ff" }}>
               The problem
@@ -428,11 +506,19 @@ export default function LandingPage() {
               <br />
               The chart doesn't.
             </h2>
-            <div className="space-y-7">
-              {PROBLEM_BULLETS.map((b) => (
+            <div className="space-y-5">
+              {PROBLEM_BULLETS.map((b, i) => (
                 <div key={b.title}>
-                  <div className="font-semibold text-[#0F172A] mb-1.5">· {b.title}</div>
-                  <div className="text-sm leading-relaxed pl-4" style={{ color: "#0F172A" }}>
+                  <div
+                    className="text-[11px] font-bold tracking-widest mb-1.5"
+                    style={{ color: "#4780ff" }}
+                  >
+                    0{i + 1}
+                  </div>
+                  <div className="font-semibold text-[#0F172A] mb-1 text-[15px] leading-snug">
+                    {b.title}
+                  </div>
+                  <div className="text-sm leading-relaxed" style={{ color: "#475569" }}>
                     {b.body}
                   </div>
                 </div>
@@ -512,33 +598,33 @@ export default function LandingPage() {
 
       {/* ─── STATS ──────────────────────────────────────────── */}
       <section className="py-28 px-10 max-w-7xl mx-auto">
-        <div className="flex items-end justify-between mb-12 flex-wrap gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-3" style={{ color: "#0F172A" }}>
-              <span className="inline-block" style={{ width: 24, height: 1, background: "#D1D5DB" }} />
-              <span className="text-xs">Under the hood</span>
-            </div>
-            <h2 className="text-4xl font-bold leading-tight tracking-tight text-[#0F172A]">
-              Built for speed.
-            </h2>
+        <div className="flex flex-col items-center text-center mb-12 gap-3">
+          <div className="flex items-center justify-center gap-2" style={{ color: "#0F172A" }}>
+            <span className="inline-block" style={{ width: 24, height: 1, background: "#D1D5DB" }} />
+            <span className="text-xs">Under the hood</span>
+            <span className="inline-block" style={{ width: 24, height: 1, background: "#D1D5DB" }} />
           </div>
-          <div className="flex items-center gap-2 text-sm" style={{ color: "#0F172A" }}>
+          <h2 className="text-4xl font-bold leading-tight tracking-tight text-[#0F172A]">
+            Built for speed.
+          </h2>
+          <div className="flex items-center justify-center gap-2 text-sm" style={{ color: "#0F172A" }}>
             <span className="w-2 h-2 rounded-full" style={{ background: "#10B981" }} />
             Production ready
           </div>
         </div>
 
         <div
-          className="grid grid-cols-2"
+          className="grid grid-cols-2 md:grid-cols-4"
           style={{ border: "1px solid #E5E7EB", borderRadius: 16, overflow: "hidden" }}
         >
           {STATS.map((s, i) => (
             <div
               key={i}
-              className="p-10"
+              className="p-10 text-center"
               style={{
-                borderRight: i % 2 === 0 ? "1px solid #E5E7EB" : undefined,
-                borderBottom: i < 2 ? "1px solid #E5E7EB" : undefined,
+                borderRight:
+                  i < STATS.length - 1 ? "1px solid #E5E7EB" : undefined,
+                borderBottom: undefined,
               }}
             >
               <div
